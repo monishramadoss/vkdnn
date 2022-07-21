@@ -31,9 +31,9 @@ public:
 
 	size_t count(size_t start_axis = 0) const { return count(start_axis, mNDims); }
 	size_t count(size_t start_axis, size_t end_axis) const;
-
-	view operator[] (size_t idx);
+	
 };
+
 
 
 enum DTYPE
@@ -63,6 +63,8 @@ class tensor
 public:
 	explicit tensor(std::vector<size_t>& shape, DTYPE type = FLOAT);
 	explicit tensor(const std::vector<size_t>& shape, DTYPE type = FLOAT);
+	explicit tensor(tensor* ptr, view& view);
+
 	~tensor();
 	DTYPE getType() const { return m_dType; }
 	vk_block* get_data() const;

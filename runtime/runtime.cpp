@@ -77,12 +77,12 @@ runtime& runtime::create()
 		std::cout << "available extensions:\n";
 		for (const auto& extension : extensionProperties)
 			std::cout << '\t' << extension.extensionName << '\n';
-
+		
+		
 		enabledExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-		//enabledExtensions.push_back(VK_EXT_DEBUG_MARKER_EXTENSION_NAME);
 		enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);		
-		enabledExtensions.push_back("VK_KHR_get_physical_device_properties2");
-		enabledExtensions.push_back("VK_KHR_portability_enumeration");
+		enabledExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+		//enabledExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
 
 		// for (const VkExtensionProperties& prop : extensionProperties)
 		//     enabledExtensions.push_back(prop.extensionName);
@@ -95,12 +95,13 @@ runtime& runtime::create()
 	applicationInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 	applicationInfo.pEngineName = "vulkan_dnn";
 	applicationInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
-	applicationInfo.apiVersion = VK_API_VERSION_1_3;
+	applicationInfo.apiVersion = VK_API_VERSION_1_2;
 
 	VkInstanceCreateInfo instanceCreateInfo;
 	instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instanceCreateInfo.pNext = nullptr;
-	instanceCreateInfo.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+	instanceCreateInfo.flags = 0;
+//	instanceCreateInfo.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 	instanceCreateInfo.pApplicationInfo = &applicationInfo;
 	instanceCreateInfo.enabledLayerCount = static_cast<uint32_t>(enabledLayers.size());
 	instanceCreateInfo.ppEnabledLayerNames = enabledLayers.data();
@@ -147,7 +148,7 @@ runtime& runtime::create()
 
 	size_t i = 0;
 	for (const auto& pDev : m_physical_devices)
-		m_devices.push_back(device(i++, m_instance, pDev, {}, {"VK_KHR_portability_subset"}));
+		m_devices.emplace_back(i++, m_instance, pDev); // , {}, { "VK_KHR_portability_subset" }));
 
 	if (result != VK_SUCCESS)
 		throw std::runtime_error("CANNOT CREATE LAYER");
@@ -210,8 +211,8 @@ device::device(size_t device_id, const VkInstance& instance, const VkPhysicalDev
 	m_device_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
 	m_subgroup_properites.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
 	m_device_properties.pNext = &m_subgroup_properites;
-	vkGetPhysicalDeviceProperties2(m_physical_device, &m_device_properties);
 
+	vkGetPhysicalDeviceProperties(m_physical_device, &m_device_properties.properties);
 	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &m_memory_properties);
 	vkGetPhysicalDeviceFeatures(m_physical_device, &m_device_features);
 
@@ -228,7 +229,7 @@ device::device(size_t device_id, const VkInstance& instance, const VkPhysicalDev
 	m_max_work_group_size[0] = limits.maxComputeWorkGroupSize[0];
 	m_max_work_group_size[1] = limits.maxComputeWorkGroupSize[1];
 	m_max_work_group_size[2] = limits.maxComputeWorkGroupSize[2];
-	m_max_subgroup_size = m_subgroup_properites.subgroupSize;
+	//m_max_subgroup_size = m_subgroup_properites.subgroupSize;
 
 	uint32_t queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(m_physical_device, &queueFamilyCount, nullptr);
@@ -691,7 +692,7 @@ inline int findMemoryTypeIndex(uint32_t memoryTypeBits,
 }
 
 vk_chunk::vk_chunk(size_t device_id, const VkDevice& dev, size_t size, int memoryTypeIndex) : m_device_id(device_id),
-	m_device(dev), m_size(size), m_memory_type_index(memoryTypeIndex)
+	m_device(dev), m_size(size), m_memory_type_index(memoryTypeIndex), m_ptr(nullptr)
 {
 	VkMemoryAllocateInfo alloc_info{};
 	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;

@@ -31,6 +31,7 @@ void main()
 )";
 
 
+
 int main()
 {
 	/*auto dev = kRuntime.get_device(0);
@@ -58,6 +59,6 @@ int main()
 
 
 	tensor t1 = tensor({ 2, 4, 4, 2 });
-
+	tensor t2 = tensor({ 4, 8 });
 	return 0;
 }
