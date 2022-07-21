@@ -6,14 +6,14 @@
 
 struct vk_block
 {
-	size_t size{};
-	size_t offset{};
-	size_t device_id{};
-	bool free{};
-	void* ptr = nullptr;
-	VkDeviceMemory memory{};
-	VkBuffer buf = nullptr;
-	VkImage img = nullptr;
+	size_t size;
+	size_t offset;
+	size_t device_id;
+	bool free;
+	void* ptr;
+	VkDeviceMemory memory;
+	VkBuffer buf;
+	VkImage img;
 
 	bool operator==(const vk_block& blk) const
 	{
@@ -24,38 +24,38 @@ struct vk_block
 	}
 };
 
-class vk_chunk final
+class vk_chunk 
 {
 	size_t m_device_id;
-	VkDevice m_device{};
-	VkDeviceMemory m_memory{};
-	void* m_ptr{};
+	VkDevice m_device;
+	VkDeviceMemory m_memory;
+	void* m_ptr;
 
-	size_t m_size{};
-	std::vector<std::shared_ptr<vk_block>> m_blocks;
-	int m_memory_type_index{};
-	bool device_local{};
+	size_t m_size;
+	std::vector<std::shared_ptr<vk_block> > m_blocks;
+	int m_memory_type_index;
+	bool device_local;
 
 	void collate_delete();
 public:
 	vk_chunk(size_t device_id, const VkDevice& dev, size_t size, int memoryTypeIndex);
 	bool allocate(size_t size, size_t alignment, vk_block** blk);
 	bool deallocate(const vk_block* blk) const;
-	[[nodiscard]] VkDeviceMemory get_memory() const { return m_memory; }
+	VkDeviceMemory get_memory() const { return m_memory; }
 	void cleanup();
 	void set_host_visible();
 	~vk_chunk();
 };
 
-class vk_allocator final
+class vk_allocator
 {
 	size_t m_device_id;
-	size_t m_size{};
-	size_t m_alignment{};
-	VkDevice m_device{};
-	bool m_device_local{};
-	VkPhysicalDeviceMemoryProperties m_properties{};
-	std::vector<std::shared_ptr<vk_chunk>> m_chunks;
+	size_t m_size;
+	size_t m_alignment;
+	VkDevice m_device;
+	bool m_device_local;
+	VkPhysicalDeviceMemoryProperties m_properties;
+	std::vector< std::shared_ptr<vk_chunk> > m_chunks;
 
 public:
 	vk_allocator();

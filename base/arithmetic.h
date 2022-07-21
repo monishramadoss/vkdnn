@@ -1,6 +1,8 @@
 #pragma once
 #include "../runtime/runtime.h"
 #include "../tensor/tensor.h"
+#include <cstdio>
+#include <cstring>
 
 struct param {
 	int total;

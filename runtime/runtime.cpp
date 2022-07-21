@@ -5,13 +5,14 @@
 
 #include <iostream>
 #include <fstream>
+#include <cstdio>
 #include <vulkan/vulkan.h>
 
 #ifdef NDEBUG
-constexpr bool enableValidationLayers = false;
+bool enableValidationLayers = false;
 #else
-constexpr bool enableValidationLayers = true;
-//constexpr bool enableValidationLayers = false;
+//bool enableValidationLayers = true;
+bool enableValidationLayers = true;
 #endif
 
 // Define a callback to capture the messages
@@ -60,7 +61,7 @@ runtime& runtime::create()
 
 		bool foundLayer = false;
 		//for (const VkLayerProperties& prop : layerProperties)
-		//    enabledLayers.push_back(prop.layerName);
+	    //	enabledLayers.push_back(prop.layerName);
 
 		enabledLayers.push_back("VK_LAYER_KHRONOS_validation");
 
@@ -79,9 +80,12 @@ runtime& runtime::create()
 
 		enabledExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 		//enabledExtensions.push_back(VK_EXT_DEBUG_MARKER_EXTENSION_NAME);
-		enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		//for (const VkExtensionProperties& prop : extensionProperties)
-		//    enabledExtensions.push_back(prop.extensionName);
+		enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);		
+		enabledExtensions.push_back("VK_KHR_get_physical_device_properties2");
+		enabledExtensions.push_back("VK_KHR_portability_enumeration");
+
+		// for (const VkExtensionProperties& prop : extensionProperties)
+		//     enabledExtensions.push_back(prop.extensionName);
 	}
 
 	VkApplicationInfo applicationInfo;
@@ -96,7 +100,7 @@ runtime& runtime::create()
 	VkInstanceCreateInfo instanceCreateInfo;
 	instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instanceCreateInfo.pNext = nullptr;
-	instanceCreateInfo.flags = 0;
+	instanceCreateInfo.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 	instanceCreateInfo.pApplicationInfo = &applicationInfo;
 	instanceCreateInfo.enabledLayerCount = static_cast<uint32_t>(enabledLayers.size());
 	instanceCreateInfo.ppEnabledLayerNames = enabledLayers.data();
@@ -122,6 +126,8 @@ runtime& runtime::create()
 
 		instanceCreateInfo.pNext = &messengerInfo;
 		result = vkCreateInstance(&instanceCreateInfo, nullptr, &m_instance);
+		if(result != VK_SUCCESS)
+			throw std::runtime_error("failed to setup instance!");
 		result = CreateDebugUtilsMessengerEXT(m_instance, &messengerInfo, nullptr, &m_debug_messenger);
 		if (result != VK_SUCCESS)
 			throw std::runtime_error("failed to set up debug messenger!");
@@ -130,6 +136,8 @@ runtime& runtime::create()
 	{
 		instanceCreateInfo.pNext = nullptr;
 		result = vkCreateInstance(&instanceCreateInfo, nullptr, &m_instance);
+		if (result != VK_SUCCESS)
+			throw std::runtime_error("failed to set up instance!");
 	}
 
 	result = vkEnumeratePhysicalDevices(m_instance, &m_device_count, nullptr);
@@ -139,7 +147,7 @@ runtime& runtime::create()
 
 	size_t i = 0;
 	for (const auto& pDev : m_physical_devices)
-		m_devices.emplace_back(i++, m_instance, pDev); // , enabledLayers, { "" });
+		m_devices.push_back(device(i++, m_instance, pDev, {}, {"VK_KHR_portability_subset"}));
 
 	if (result != VK_SUCCESS)
 		throw std::runtime_error("CANNOT CREATE LAYER");
@@ -345,7 +353,9 @@ job* device::make_job(const std::string& kernel_name, const std::vector<vk_block
 
 vk_block* device::malloc(size_t size)
 {
-	return m_device_allocator.allocate_buffer(size);
+	vk_block* host_block = m_staging_allocator.allocate_buffer(size);
+	vk_block* device_block = m_device_allocator.allocate_buffer(size);
+	return host_block;
 }
 
 void device::free(vk_block** block) const
@@ -590,18 +600,18 @@ void job::set_group_size(uint32_t x, uint32_t y, uint32_t z)
 
 std::vector<uint32_t> compile(const std::string shader_entry, const std::string& source, char* filename)
 {
-	char tmp_filename_in[L_tmpnam_s];
-	char tmp_filename_out[L_tmpnam_s];
+	char tmp_filename_in[L_tmpnam];
+	char tmp_filename_out[L_tmpnam];
 
-	tmpnam_s(tmp_filename_in, L_tmpnam_s);
-	tmpnam_s(tmp_filename_out, L_tmpnam_s);
+	tmpnam(tmp_filename_in);
+	tmpnam(tmp_filename_out);
 
 	FILE* tmp_file;
-	fopen_s(&tmp_file, tmp_filename_in, "wb+");
+	tmp_file = fopen(tmp_filename_in, "wb+");
 	fputs(source.c_str(), tmp_file);
 	fclose(tmp_file);
 
-	fopen_s(&tmp_file, tmp_filename_out, "wb+");
+	tmp_file = fopen(tmp_filename_out, "wb+");
 	fclose(tmp_file);
 
 	const std::string cmd_str = std::string("glslangValidator -V " + std::string(tmp_filename_in) + " --entry-point " + shader_entry + " --source-entrypoint main -S comp -o " + tmp_filename_out);
@@ -662,9 +672,9 @@ inline int findMemoryTypeIndex(uint32_t memoryTypeBits,
 
 	if (!shouldBeDeviceLocal)
 	{
-		constexpr VkMemoryPropertyFlags optimal = VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
+		VkMemoryPropertyFlags optimal = VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
 			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-		constexpr VkMemoryPropertyFlags required = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+		VkMemoryPropertyFlags required = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 
 		const int type = lambdaGetMemoryType(optimal);

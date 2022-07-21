@@ -7,11 +7,11 @@
 
 class runtime
 {
-	VkInstance m_instance = nullptr;
-	std::vector<VkPhysicalDevice> m_physical_devices{};
-	std::vector<device> m_devices{};
-	uint32_t m_device_count = 0;
-	VkDebugUtilsMessengerEXT m_debug_messenger{};
+	VkInstance m_instance;
+	std::vector<VkPhysicalDevice> m_physical_devices;
+	std::vector<device> m_devices;
+	uint32_t m_device_count;
+	VkDebugUtilsMessengerEXT m_debug_messenger;
 
 	void cleanup() const;
 public:
@@ -19,7 +19,7 @@ public:
 	runtime();
 	~runtime();
 
-	[[nodiscard]] device& get_device(size_t idx = 0);
+	device& get_device(size_t idx = 0);
 
 	vk_block** malloc(size_t size);
 	void free(vk_block** blk);

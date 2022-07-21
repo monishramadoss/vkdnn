@@ -15,7 +15,7 @@ view::view(const size_t* shape, size_t dims, char data_size): mNDims(dims), mSha
 	mStride[0] = 1;
 	mSize[mNDims] = 1;
 
-	for(auto i = 0; i < dims; ++i)
+	for(size_t i = 0; i < dims; ++i)
 	{
 		mShape[i] = shape[i];
 		mDataSize *= shape[i];
@@ -34,7 +34,7 @@ view::view(const size_t* shape, size_t dims, char data_size): mNDims(dims), mSha
 
 	for (size_t i = 0, j = mNDims-1; i < mNDims/2; ++i, --j)
 	{
-		const auto tmp = mStride[i];
+		const size_t tmp = mStride[i];
 		mStride[i] = mStride[j];
 		mStride[j] = tmp;
 	}

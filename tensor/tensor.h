@@ -15,7 +15,7 @@ struct offset
 class view
 {
 	size_t mNDims;
-	size_t mDataSize{};
+	size_t mDataSize;
 
 	size_t* mShape;
 	size_t* mSize;
@@ -54,12 +54,12 @@ enum DTYPE
 };
 
 
-class tensor final
+class tensor 
 {
 	view m_view;
-	vk_block** m_data{};
-	tensor* m_parent{};
-	DTYPE m_dType{};
+	vk_block** m_data;
+	tensor* m_parent;
+	DTYPE m_dType;
 public:
 	explicit tensor(std::vector<size_t>& shape, DTYPE type = FLOAT);
 	explicit tensor(const std::vector<size_t>& shape, DTYPE type = FLOAT);
