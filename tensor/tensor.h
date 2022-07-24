@@ -24,13 +24,13 @@ class view
 public:
 	view(const size_t* shape, size_t dims, char data_size);
 	~view();
-	size_t ndims() const { return mNDims; }
-	size_t size(size_t idx = 0) const { return mSize[idx]; }
-	size_t shape(size_t idx = 0) const { return mShape[idx]; }
-	size_t bytes_length() const { return mSize[0] * mDataSize; }
+	[[nodiscard]] size_t ndims() const { return mNDims; }
+	[[nodiscard]] size_t size(size_t idx = 0) const { return mSize[idx]; }
+	[[nodiscard]] size_t shape(size_t idx = 0) const { return mShape[idx]; }
+	[[nodiscard]] size_t bytes_length() const { return mSize[0] * mDataSize; }
 
-	size_t count(size_t start_axis = 0) const { return count(start_axis, mNDims); }
-	size_t count(size_t start_axis, size_t end_axis) const;
+	[[nodiscard]] size_t count(size_t start_axis = 0) const { return count(start_axis, mNDims); }
+	[[nodiscard]] size_t count(size_t start_axis, size_t end_axis) const;
 	
 };
 
@@ -66,9 +66,9 @@ public:
 	explicit tensor(tensor* ptr, view& view);
 
 	~tensor();
-	DTYPE getType() const { return m_dType; }
-	vk_block* get_data() const;
-	size_t get_size(size_t i=0) const { return m_view.size(i); }
+	[[nodiscard]] DTYPE getType() const { return m_dType; }
+	[[nodiscard]] vk_block* get_data() const;
+	[[nodiscard]] size_t get_size(size_t i=0) const { return m_view.size(i); }
 };
 
 

@@ -16,11 +16,7 @@ target_link_libraries(vulkan_dnn  "nn" "tensor")
 
 
 add_subdirectory("runtime")
-
 add_subdirectory("tensor")
-
 add_subdirectory("nn")
-
 add_subdirectory("blas")
-
 add_subdirectory("base")

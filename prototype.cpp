@@ -5,33 +5,6 @@
 
 using namespace std;
 
-struct param {
-	int total;
-};
-
-std::string set_one_shader = R"(
-#version 460
-layout(push_constant) uniform pushBlock {
-      int total;     
-};
-
-layout(binding = 0) readonly buffer buf1 { float X[]; };
-layout(binding = 1) writeonly buffer buf2 {  float Y[]; };
-
-layout(local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
-
-void main()
-{
-    for (int i = int(gl_GlobalInvocationID.x); i < total; i += int(gl_NumWorkGroups.x * gl_WorkGroupSize.x))
-    {
-		Y[i] = X[i] + 2.0f;
-    }
-}
-
-)";
-
-
-
 int main()
 {
 	/*auto dev = kRuntime.get_device(0);
@@ -58,7 +31,9 @@ int main()
 	*/
 
 
-	tensor t1 = tensor({ 2, 4, 4, 2 });
-	tensor t2 = tensor({ 4, 8 });
+	tensor t1 = tensor({ 128 });
+	tensor t2 = tensor({ 128 });
+	tensor t3 = tensor({ 128 });
+
 	return 0;
 }

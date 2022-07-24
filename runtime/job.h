@@ -45,5 +45,5 @@ public:
 	void cleanup() const;
 	void bind_buffer(const vk_block* blk, uint32_t i);
 
-	VkSubmitInfo get_submit_info() const;
+	[[nodiscard]] VkSubmitInfo get_submit_info() const;
 };

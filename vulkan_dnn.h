@@ -7,5 +7,9 @@
 
 // TODO: Reference additional headers your program requires here.
 #include "tensor/tensor.h"
+
+#include "base/arithmetic.h"
+
+
 #include "nn/nn.h"
 #include "blas/blas.h"

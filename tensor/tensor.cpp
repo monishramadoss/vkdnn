@@ -7,11 +7,10 @@
 #include <vector>
 
 
-view::view(const size_t* shape, size_t dims, char data_size): mNDims(dims), mShape(new size_t[dims]),
+view::view(const size_t* shape, size_t dims, char data_size): mNDims(dims), mDataSize(data_size), mShape(new size_t[dims]),
                                                               mSize(new size_t[dims + 1]), mStride(new size_t[dims]),
                                                               mOffset(nullptr)
 {
-	mDataSize =  data_size;
 	mStride[0] = 1;
 	mSize[mNDims] = 1;
 
@@ -51,13 +50,13 @@ view::~view()
 
 char get_data_size(DTYPE type)
 {
-	if (type == DTYPE::DOUBLE || type == DTYPE::LINT || type == DTYPE::LUINT)
+	if (type == DOUBLE || type == LINT || type == LUINT)
 		return 8;
-	else if (type == DTYPE::FLOAT || type == DTYPE::INT || type == DTYPE::UINT || type == DTYPE::BOOL)
+	else if (type == FLOAT || type == INT || type == UINT || type == BOOL)
 		return 4;
-	else if (type == DTYPE::HFLOAT || type == DTYPE::HINT || type == DTYPE::HUINT)
+	else if (type == HFLOAT || type == HINT || type == HUINT)
 		return 2;
-	else if (type == DTYPE::INT8 || type == DTYPE::UINT8)
+	else if (type == INT8 || type == UINT8)
 		return 1;
 	else
 		return 0;
@@ -82,6 +81,10 @@ tensor::tensor(std::vector<size_t>& shape, DTYPE type) : m_view(shape.data(), sh
 tensor::tensor(const std::vector<size_t>& shape, const DTYPE type) : m_view(shape.data(), shape.size(), get_data_size(type)), m_dType(type)
 {
 	m_data = kRuntime.malloc(m_view.bytes_length());
+}
+
+tensor::tensor(tensor* ptr, view& view) : m_view(view)
+{
 }
 
 tensor::~tensor()

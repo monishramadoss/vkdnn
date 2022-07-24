@@ -41,7 +41,7 @@ public:
 	vk_chunk(size_t device_id, const VkDevice& dev, size_t size, int memoryTypeIndex);
 	bool allocate(size_t size, size_t alignment, vk_block** blk);
 	bool deallocate(const vk_block* blk) const;
-	VkDeviceMemory get_memory() const { return m_memory; }
+	[[nodiscard]] VkDeviceMemory get_memory() const { return m_memory; }
 	void cleanup();
 	void set_host_visible();
 	~vk_chunk();

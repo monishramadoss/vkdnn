@@ -340,17 +340,6 @@ device::device(size_t device_id, const VkInstance& instance, const VkPhysicalDev
 
 device::~device() = default;
 
-job* device::make_job(const std::string& kernel_name, const std::vector<vk_block*>& blks, void* p, size_t param_size)
-{
-	auto* j = new job(m_logical_device, m_cmd_pool, static_cast<uint32_t>(blks.size()), kernel_name);
-	j->set_shader(kernel_mapping[kernel_name]);
-	j->set_push_constants(&p, param_size);
-	for (uint32_t i = 0; i < blks.size(); ++i)
-		j->bind_buffer(blks[i], i);
-
-	jobs.push_back(j);
-	return j;
-}
 
 vk_block* device::malloc(size_t size)
 {
@@ -692,7 +681,7 @@ inline int findMemoryTypeIndex(uint32_t memoryTypeBits,
 }
 
 vk_chunk::vk_chunk(size_t device_id, const VkDevice& dev, size_t size, int memoryTypeIndex) : m_device_id(device_id),
-	m_device(dev), m_size(size), m_memory_type_index(memoryTypeIndex), m_ptr(nullptr)
+	m_device(dev), m_ptr(nullptr), m_size(size), m_memory_type_index(memoryTypeIndex)
 {
 	VkMemoryAllocateInfo alloc_info{};
 	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;

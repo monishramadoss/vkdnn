@@ -2,46 +2,37 @@
 
 #pragma once
 #include "../runtime/runtime.h"
-#include "arithmetic.h"
+#include "../tensor/tensor.h"
 
 #include <string>
+#include <format>
 #include <sstream>
+/*
+*
+* GL_EXT_shader_explicit_arithmetic_types_int8
+* GL_EXT_shader_explicit_arithmetic_types_int16
+* GL_EXT_shader_explicit_arithmetic_types_int32
+* GL_EXT_shader_explicit_arithmetic_types_int64
+* GL_EXT_shader_explicit_arithmetic_types_float16
+* GL_EXT_shader_explicit_arithmetic_types_float32
+* GL_EXT_shader_explicit_arithmetic_types_float64
+*/
 
-inline std::string& tensor_injection(std::string& body, int i, tensor& t1)
-{
-	DTYPE type = t1.getType();
-	std::string var_name = "tensor_" + std::to_string(i);
-	char tensor_injection[128];
-	std::string type_name;
+inline const char* shader_extensions[]{
+	"",																		// 0
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable",		// 1
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable",	// 2 
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int32: enable",		// 3
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable",	// 4
+	"#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable",	// 5
+	"#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable",	// 6
+	"#extension GL_EXT_shader_explicit_arithmetic_types_float64 : enable"	// 7
+};
 
-	switch(type)
-	{
-	case DTYPE::FLOAT:
-		type_name = "float";
-	case DTYPE::INT:
-		type_name = "int";
-	case DTYPE::UINT:
-		type_name = "uint";
-	case DTYPE::BOOL:
-		type_name = "bool";
-	case DTYPE::DOUBLE:
-		type_name = "double";
-	case DTYPE::HFLOAT:
-		type_name = "float16_t";
-		body = "#extension GL_AMD_gpu_shader_half_float : enable" + body;
-	case DTYPE::HINT:
-		type_name = "int16_t";
-		body = "#extension GL_AMD_gpu_shader_half_float : enable" + body;
-	case DTYPE::HUINT:
-		type_name = "uint16_t";
-		body = "#extension GL_AMD_gpu_shader_half_float : enable" + body;
 
-	}
+inline int gen_type(DTYPE type, std::string& type_name);
 
-	const auto n = sprintf(tensor_injection, "layout(binding = %d) readonly buffer buf1 { %s %s[]; };\n", i,
-	                       type_name.c_str(), var_name.c_str());
-	tensor_injection[n+1] = '\0';
-	
-	body += tensor_injection;
-	return var_name;
-}
+
+
+
+inline int tensor_injection(std::string& body, std::string& var_name, int i, const tensor& t1);
