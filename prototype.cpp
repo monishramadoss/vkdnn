@@ -1,39 +1,73 @@
 ﻿// vulkan_dnn.cpp : Defines the entry point for the application.
 //
-
 #include "vulkan_dnn.h"
+#include <chrono>
+using namespace std::chrono;
 
 using namespace std;
+struct temp_param
+{
+	int size;
+};
 
 int main()
 {
-	/*auto dev = kRuntime.get_device(0);
-	vk_block* x = dev.malloc(128);
-	vk_block* y = dev.malloc(128);
-	memset(x->ptr, 0, 128);
-	param p{ 128 / 4,};
-	dev.kernel_mapping["set_one"] = set_one_shader;
+	init();
 
-	auto* j = dev.make_job("set_one", { x, y }, (void*)&p, sizeof(p));
+	tensor t1 = arange_t<float>(25);
+	t1.reshape({ 5, 5 });
+	tensor t2 = arange_t<float>(25);
+	t2.reshape({ 5, 5 });
+	tensor t3({ 5, 5 });
 
-	dev.run();
+	matmul(t1, t2, t3);
 
-	float* f0 = static_cast<float*>(x->ptr);
-	char* c1 = static_cast<char*>(y->ptr) + y->offset;
+	t3.sync(false);
 	
-	float* f1 = reinterpret_cast<float*>(c1);
-	for(auto i = 0; i < 128/4; ++i)
+
+
+	// 16384 
+	uint32_t m = 16384;
+	uint32_t n = 8192;
+	uint32_t k = 8192; 
+
+	m = 4096;
+	n = 4096;
+	k = 4096;
+
+	tensor t4 = tensor::ones<float>({ m, n });
+	tensor t5 = tensor::ones<float>({ n, k });
+	tensor t6 = tensor::zeros<float>({ m, k });
+
+	matmul(t4, t5, t6);
+	t6.sync(false);
+
+	
+	const auto* f1 = static_cast<float*>(t3.get_host_data()->ptr);
+	//const auto* f2 = static_cast<float*>(t5.get_host_data()->ptr);
+	const auto* f3 = static_cast<float*>(t6.get_host_data()->ptr);
+
+	k_runtime->wait();
+
+	size_t i;
+	for(i = 0; i < t6.get_size(); ++i)
 	{
-		if (f1[i] != 2.0f)
-			std::cout << i << '\n';
+		if (f3[i] != 4096)
+ 			break;
 	}
 
-	*/
+	for (i = 0; i < 5; ++i)
+	{
+		for(size_t j = 0; j < 5; ++j)
+		{
+			std::cout << f1[i * 5 + j] << " ";
+		}
+		std::cout << '\n';
+	}
 
 
-	tensor t1 = tensor({ 128 });
-	tensor t2 = tensor({ 128 });
-	tensor t3 = tensor({ 128 });
+	//CUDA : 60-80 microseconds;
+	//VK : 
 
 	return 0;
 }

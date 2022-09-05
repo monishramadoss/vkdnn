@@ -1,624 +1,203 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include "runtime.h"
 #include "allocator.h"
 #include "job.h"
 #include "device.h"
 
+
 #include <iostream>
+#include <map>
 #include <fstream>
 #include <cstdio>
 #include <vulkan/vulkan.h>
 
-#ifdef NDEBUG
-bool enableValidationLayers = false;
-#else
-//bool enableValidationLayers = true;
-bool enableValidationLayers = true;
-#endif
 
-// Define a callback to capture the messages
-VKAPI_ATTR VkBool32 VKAPI_CALL debug_messenger_callback(
-	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-	VkDebugUtilsMessageTypeFlagsEXT messageType,
-	const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
-	void* userData)
+
+runtime* k_runtime = nullptr;
+std::map<std::string, size_t> k_kernel_name_count;
+runtime* init()
 {
-	std::cerr << "validation layer: " << callbackData->pMessage << std::endl;
-
-	return false;
+	if (k_runtime == nullptr)
+		k_runtime = new runtime();
+	return k_runtime;
 }
 
-VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-                                      const VkAllocationCallbacks* pAllcator, VkDebugUtilsMessengerEXT* pDebugMessenger)
+
+device::device(device&& d) noexcept : device_id_(d.device_id_), logical_device_(d.logical_device_),
+                                      physical_device_(d.physical_device_), device_properties_(d.device_properties_),
+                                      device_features_(d.device_features_)
+                                      , memory_properties_(d.memory_properties_),
+                                      subgroup_properites_(d.subgroup_properites_),
+                                      cmd_queue_(d.cmd_queue_),
+                                      cmd_pool_(d.cmd_pool_), max_device_memory_size_(d.max_device_memory_size_),
+                                      max_host_device_memory_size_(d.max_host_device_memory_size_),
+                                      max_subgroup_size_(d.max_subgroup_size_)
+                                      , host_coherent_allocator_(std::move(d.host_coherent_allocator_)),
+                                      device_allocator_(std::move(d.device_allocator_)),
+                                      local_thread_(d.local_thread_),
+                                      queue_priority_(d.queue_priority_), device_name(d.device_name)
 {
-	const auto func = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(
-		instance, "vkCreateDebugUtilsMessengerEXT"));
-	if (func != nullptr)
-		return func(instance, pCreateInfo, pAllcator, pDebugMessenger);
-	return VK_ERROR_EXTENSION_NOT_PRESENT;
+	d.wait();
+	std::memcpy(max_work_group_size_, d.max_work_group_size_, sizeof(uint32_t) * 3);
+	std::memcpy(max_work_group_count_, d.max_work_group_count_, sizeof(uint32_t) * 3);
 }
 
-void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger,
-                                   const VkAllocationCallbacks* pAllocator)
+device& device::operator=(device&& d) noexcept
 {
-	const auto func = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
-		vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
-	if (func != nullptr)
-		func(instance, debugMessenger, pAllocator);
-}
-
-runtime& runtime::create()
-{
-	std::vector<const char*> enabledLayers;
-	std::vector<const char*> enabledExtensions;
-
-	if (enableValidationLayers)
+	if (this != &d)
 	{
-		uint32_t layerCount;
-		vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-		std::vector<VkLayerProperties> layerProperties(layerCount);
-		vkEnumerateInstanceLayerProperties(&layerCount, layerProperties.data());
-
-
-		bool foundLayer = false;
-		//for (const VkLayerProperties& prop : layerProperties)
-	    //	enabledLayers.push_back(prop.layerName);
-
-		enabledLayers.push_back("VK_LAYER_KHRONOS_validation");
-
-		uint32_t extensionCount;
-		vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-		std::vector<VkExtensionProperties> extensionProperties(extensionCount);
-		vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensionProperties.data());
-
-		std::cout << "available layers:\n";
-		for (const auto& layer : layerProperties)
-			std::cout << '\t' << layer.layerName << '\n';
-
-		std::cout << "available extensions:\n";
-		for (const auto& extension : extensionProperties)
-			std::cout << '\t' << extension.extensionName << '\n';
-		
-		
-		enabledExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-		enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);		
-		enabledExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-		//enabledExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-
-		// for (const VkExtensionProperties& prop : extensionProperties)
-		//     enabledExtensions.push_back(prop.extensionName);
+		d.wait();
+		device_id_ = d.device_id_;
+		logical_device_ = d.logical_device_;
+		physical_device_ = d.physical_device_;
+		device_properties_ = d.device_properties_;
+		device_features_ = d.device_features_;
+		memory_properties_ = d.memory_properties_;
+		subgroup_properites_ = d.subgroup_properites_;
+		cmd_queue_ = d.cmd_queue_;
+		cmd_pool_ = d.cmd_pool_;
+		max_device_memory_size_ = d.max_device_memory_size_;
+		max_host_device_memory_size_ = d.max_host_device_memory_size_;
+		max_subgroup_size_ = d.max_subgroup_size_;
+		std::memcpy(max_work_group_size_, d.max_work_group_size_, sizeof(uint32_t) * 3);
+		std::memcpy(max_work_group_count_, d.max_work_group_count_, sizeof(uint32_t) * 3);
+		host_coherent_allocator_ = std::move(d.host_coherent_allocator_);
+		device_allocator_ = std::move(d.device_allocator_);
+		device_name = d.device_name;
+		queue_priority_ = d.queue_priority_;
 	}
-
-	VkApplicationInfo applicationInfo;
-	applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	applicationInfo.pNext = nullptr;
-	applicationInfo.pApplicationName = "Vulkan GPU Training BABY";
-	applicationInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-	applicationInfo.pEngineName = "vulkan_dnn";
-	applicationInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
-	applicationInfo.apiVersion = VK_API_VERSION_1_2;
-
-	VkInstanceCreateInfo instanceCreateInfo;
-	instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	instanceCreateInfo.pNext = nullptr;
-	instanceCreateInfo.flags = 0;
-//	instanceCreateInfo.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-	instanceCreateInfo.pApplicationInfo = &applicationInfo;
-	instanceCreateInfo.enabledLayerCount = static_cast<uint32_t>(enabledLayers.size());
-	instanceCreateInfo.ppEnabledLayerNames = enabledLayers.data();
-	instanceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size());
-	instanceCreateInfo.ppEnabledExtensionNames = enabledExtensions.data();
-
-	VkResult result;
-	VkDebugUtilsMessengerCreateInfoEXT messengerInfo = {};
-	if (enableValidationLayers)
-	{
-		messengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-		messengerInfo.pNext = nullptr;
-		messengerInfo.messageSeverity =
-			VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-		messengerInfo.messageType =
-			VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-		messengerInfo.pfnUserCallback = debug_messenger_callback;
-		messengerInfo.pUserData = nullptr;
-
-		instanceCreateInfo.pNext = &messengerInfo;
-		result = vkCreateInstance(&instanceCreateInfo, nullptr, &m_instance);
-		if(result != VK_SUCCESS)
-			throw std::runtime_error("failed to setup instance!");
-		result = CreateDebugUtilsMessengerEXT(m_instance, &messengerInfo, nullptr, &m_debug_messenger);
-		if (result != VK_SUCCESS)
-			throw std::runtime_error("failed to set up debug messenger!");
-	}
-	else
-	{
-		instanceCreateInfo.pNext = nullptr;
-		result = vkCreateInstance(&instanceCreateInfo, nullptr, &m_instance);
-		if (result != VK_SUCCESS)
-			throw std::runtime_error("failed to set up instance!");
-	}
-
-	result = vkEnumeratePhysicalDevices(m_instance, &m_device_count, nullptr);
-	m_physical_devices.resize(m_device_count);
-	vkEnumeratePhysicalDevices(m_instance, &m_device_count, m_physical_devices.data());
-
-
-	size_t i = 0;
-	for (const auto& pDev : m_physical_devices)
-		m_devices.emplace_back(i++, m_instance, pDev); // , {}, { "VK_KHR_portability_subset" }));
-
-	if (result != VK_SUCCESS)
-		throw std::runtime_error("CANNOT CREATE LAYER");
 	return *this;
 }
 
-runtime::runtime()
+void device::create(const std::vector<const char*>& validation_layers, const std::vector<const char*>& extension_layers)
 {
-	create();
-}
+	device_properties_.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	subgroup_properites_.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
+	device_properties_.pNext = &subgroup_properites_;
 
-runtime::~runtime()
-{	
-	cleanup();
-}
+	vkGetPhysicalDeviceProperties(physical_device_, &device_properties_.properties);
+	vkGetPhysicalDeviceMemoryProperties(physical_device_, &memory_properties_);
+	vkGetPhysicalDeviceFeatures(physical_device_, &device_features_);
 
-void runtime::cleanup() const
-{
-	for (auto device : m_devices)
-		device.cleanup();
-	if (enableValidationLayers)
-		DestroyDebugUtilsMessengerEXT(m_instance, m_debug_messenger, nullptr);
-	vkDestroyInstance(m_instance, nullptr);
-}
-
-device& runtime::get_device(size_t idx)
-{
-	return m_devices[idx];
-}
-
-vk_block** runtime::malloc(size_t size)
-{
-	vk_block* ptr = get_device().malloc(size);
-	return &ptr;
-}
-
-void runtime::free(vk_block** blk)
-{
-	get_device().free(blk);
-}
-
-
-static std::vector<uint32_t> compile(const std::string shader_entry, const std::string& source, char* filename = nullptr);
-constexpr float queuePriority = 1.0f;
-
-inline uint32_t get_heap_index(const VkMemoryPropertyFlags& flags, const VkPhysicalDeviceMemoryProperties& properties)
-{
-	for (uint32_t i = 0; i < properties.memoryTypeCount; ++i)
-	{
-		if ((flags & properties.memoryTypes[i].propertyFlags) == flags)
-			return properties.memoryTypes[i].heapIndex;
-	}
-	return -1;
-}
-
-device::device(size_t device_id, const VkInstance& instance, const VkPhysicalDevice& pDev,
-	const std::vector<const char*>& validation_layers,
-	const std::vector<const char*>& extension_layers) : m_device_id(device_id), m_physical_device(pDev)
-{
-	m_device_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-	m_subgroup_properites.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
-	m_device_properties.pNext = &m_subgroup_properites;
-
-	vkGetPhysicalDeviceProperties(m_physical_device, &m_device_properties.properties);
-	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &m_memory_properties);
-	vkGetPhysicalDeviceFeatures(m_physical_device, &m_device_features);
-
-	const int heap_idx = get_heap_index(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_memory_properties);
-	if (heap_idx == -1)
+	const int device_heap_idx = get_heap_index(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memory_properties_);
+	const int host_heap_idx = get_heap_index(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+	                                         memory_properties_);
+	if (device_heap_idx == -1 || host_heap_idx == -1)
 		throw std::runtime_error("Cannot find device heap");
 
-	const VkPhysicalDeviceLimits limits = m_device_properties.properties.limits;
-	m_max_device_memory_size = m_memory_properties.memoryHeaps[heap_idx].size;
-	size_t buffer_copy_offset = limits.optimalBufferCopyOffsetAlignment;
-	m_max_work_group_count[0] = limits.maxComputeWorkGroupCount[0];
-	m_max_work_group_count[1] = limits.maxComputeWorkGroupCount[1];
-	m_max_work_group_count[2] = limits.maxComputeWorkGroupCount[2];
-	m_max_work_group_size[0] = limits.maxComputeWorkGroupSize[0];
-	m_max_work_group_size[1] = limits.maxComputeWorkGroupSize[1];
-	m_max_work_group_size[2] = limits.maxComputeWorkGroupSize[2];
-	//m_max_subgroup_size = m_subgroup_properites.subgroupSize;
+	limits_ = device_properties_.properties.limits;
+	max_device_memory_size_ = memory_properties_.memoryHeaps[device_heap_idx].size;
+	max_host_device_memory_size_ = memory_properties_.memoryHeaps[host_heap_idx].size;
+	//size_t buffer_copy_alignment = limits_.optimalBufferCopyOffsetAlignment;
+	//size_t buffer_alignment = limits_.minStorageBufferOffsetAlignment;
 
-	uint32_t queueFamilyCount = 0;
-	vkGetPhysicalDeviceQueueFamilyProperties(m_physical_device, &queueFamilyCount, nullptr);
-	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-	vkGetPhysicalDeviceQueueFamilyProperties(m_physical_device, &queueFamilyCount, queueFamilies.data());
+	max_work_group_count_[0] = limits_.maxComputeWorkGroupCount[0];
+	max_work_group_count_[1] = limits_.maxComputeWorkGroupCount[1];
+	max_work_group_count_[2] = limits_.maxComputeWorkGroupCount[2];
+	max_work_group_size_[0] = limits_.maxComputeWorkGroupSize[0];
+	max_work_group_size_[1] = limits_.maxComputeWorkGroupSize[1];
+	max_work_group_size_[2] = limits_.maxComputeWorkGroupSize[2];
+	max_subgroup_size_ = subgroup_properites_.subgroupSize;
+	device_name = device_properties_.properties.deviceName;
 
-	uint32_t combinedQueueIndex = 0;
-	for (const auto& queueFamily : queueFamilies)
+	uint32_t queue_family_count = 0;
+	vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &queue_family_count, nullptr);
+	queue_families_.resize(queue_family_count);
+	vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &queue_family_count, queue_families_.data());
+
+	uint32_t combined_queue_index = 0;
+	std::vector<uint32_t> transfer_queues_idxes{};
+	std::vector<uint32_t> compute_queues_idxes{};
+
+	for (const auto& [queueFlags, queueCount, timestampValidBits, minImageTransferGranularity] : queue_families_)
 	{
-		if (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT && queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT)
+		if (queueFlags & VK_QUEUE_COMPUTE_BIT && queueFlags & VK_QUEUE_TRANSFER_BIT)
 			break;
-		combinedQueueIndex++;
+		combined_queue_index++;
 	}
 
-	VkDeviceQueueCreateInfo deviceQueueCreateInfo;
-	deviceQueueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	deviceQueueCreateInfo.pNext = nullptr;
-	deviceQueueCreateInfo.flags = 0;
-	deviceQueueCreateInfo.queueCount = queueFamilies[combinedQueueIndex].queueCount;
-	deviceQueueCreateInfo.queueFamilyIndex = combinedQueueIndex;
-	deviceQueueCreateInfo.pQueuePriorities = &queuePriority;
+	uint32_t idx = 0;
+	for (const auto& [queueFlags, queueCount, timestampValidBits, minImageTransferGranularity] : queue_families_)
+	{
+		if (queueFlags & VK_QUEUE_COMPUTE_BIT)
+			compute_queues_idxes.push_back(idx);
+		else if (queueFlags & VK_QUEUE_TRANSFER_BIT && !(queueFlags & VK_QUEUE_COMPUTE_BIT))
+			transfer_queues_idxes.push_back(idx);
+		idx++;
+	}
 
-	VkDeviceCreateInfo deviceCreateInfo = {};
-	deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	deviceCreateInfo.pNext = nullptr;
-	deviceCreateInfo.flags = 0;
-	deviceCreateInfo.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
-	deviceCreateInfo.ppEnabledLayerNames = validation_layers.data();
-	deviceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(extension_layers.size());
-	deviceCreateInfo.ppEnabledExtensionNames = extension_layers.data();
-	deviceCreateInfo.pEnabledFeatures = &m_device_features;
-	deviceCreateInfo.queueCreateInfoCount = 1;
-	deviceCreateInfo.pQueueCreateInfos = &deviceQueueCreateInfo;
-	VkResult result = vkCreateDevice(m_physical_device, &deviceCreateInfo, nullptr, &m_logical_device);
+	const auto compute_queue_count = queue_families_[compute_queues_idxes.front()].queueCount;
+	std::vector<float> compute_queue_priorities(compute_queue_count);
+	for (uint32_t i = 0; i < compute_queue_count; ++i)
+		compute_queue_priorities[i] = 1 - i / static_cast<float>(compute_queue_count);
 
-	vkGetDeviceQueue(m_logical_device, combinedQueueIndex, 0, &m_cmd_queue);
+	VkDeviceQueueCreateInfo device_compute_queue_create_info{};
+	device_compute_queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	device_compute_queue_create_info.pNext = nullptr;
+	device_compute_queue_create_info.flags = 0;
+	device_compute_queue_create_info.queueCount = compute_queue_count;
+	device_compute_queue_create_info.queueFamilyIndex = compute_queues_idxes.front();
+	device_compute_queue_create_info.pQueuePriorities = compute_queue_priorities.data();
 
-	VkCommandPoolCreateInfo commandPoolCreateInfo = {};
-	commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	commandPoolCreateInfo.queueFamilyIndex = combinedQueueIndex;
-	result = vkCreateCommandPool(m_logical_device, &commandPoolCreateInfo, nullptr, &m_cmd_pool);
+	if (!transfer_queues_idxes.empty())
+	{
+		const auto transfer_queue_count = queue_families_[transfer_queues_idxes.front()].queueCount;
+		std::vector<float> transfer_queue_priortities(transfer_queue_count);
+		for (uint32_t i = 0; i < transfer_queue_count; ++i)
+			transfer_queue_priortities[i] = 1 - i / static_cast<float>(transfer_queue_count);
 
-	m_staging_allocator = vk_allocator(m_device_id, m_logical_device, m_memory_properties, 16384, false);
-	m_device_allocator = vk_allocator(m_device_id, m_logical_device, m_memory_properties, 16384, true);
+		VkDeviceQueueCreateInfo transfer_compute_queue_create_info{};
+		transfer_compute_queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		transfer_compute_queue_create_info.pNext = nullptr;
+		transfer_compute_queue_create_info.flags = 0;
+		transfer_compute_queue_create_info.queueCount = transfer_queue_count;
+		transfer_compute_queue_create_info.queueFamilyIndex = transfer_queues_idxes.front();
+		transfer_compute_queue_create_info.pQueuePriorities = transfer_queue_priortities.data();
+	}
+
+	ci_.queue_info = new VkDeviceQueueCreateInfo[1];
+	ci_.queue_info[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	ci_.queue_info[0].pNext = nullptr;
+	ci_.queue_info[0].flags = 0;
+	ci_.queue_info[0].queueCount = 1;
+	ci_.queue_info[0].queueFamilyIndex = 0;
+	ci_.queue_info[0].pQueuePriorities = &queue_priority_;
+
+	ci_.device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	ci_.device.pNext = nullptr;
+	ci_.device.flags = 0;
+	ci_.device.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
+	ci_.device.ppEnabledLayerNames = validation_layers.data();
+	ci_.device.enabledExtensionCount = static_cast<uint32_t>(extension_layers.size());
+	ci_.device.ppEnabledExtensionNames = extension_layers.data();
+	ci_.device.pEnabledFeatures = &device_features_;
+	ci_.device.queueCreateInfoCount = 1;
+	ci_.device.pQueueCreateInfos = ci_.queue_info;
+
+	vkCreateDevice(physical_device_, &ci_.device, nullptr, &logical_device_);
+	vkGetDeviceQueue(logical_device_, 0, 0, &cmd_queue_);
+
+	VkCommandPoolCreateInfo command_pool_create_info{};
+	ci_.cmd_pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	ci_.cmd_pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	ci_.cmd_pool.queueFamilyIndex = combined_queue_index;
+	const VkResult result = vkCreateCommandPool(logical_device_, &ci_.cmd_pool, nullptr, &cmd_pool_);
+
+	host_coherent_allocator_ = vk_allocator(device_id_, logical_device_, memory_properties_, 16384,
+	                                        max_host_device_memory_size_, false);
+	device_allocator_ = vk_allocator(device_id_, logical_device_, memory_properties_, 16384, max_device_memory_size_,
+	                                 true);
 
 	if (result != VK_SUCCESS)
 		std::cerr << "CANNOT CREATE DEVICE\n";
 }
 
-device::device(const device& other) : m_device_id(other.m_device_id), m_logical_device(other.m_logical_device),
-m_physical_device(other.m_physical_device),
-m_device_properties(other.m_device_properties),
-m_device_features(other.m_device_features),
-m_memory_properties(other.m_memory_properties),
-m_subgroup_properites(other.m_subgroup_properites),
-m_cmd_queue(other.m_cmd_queue),
-m_cmd_pool(other.m_cmd_pool),
-m_max_device_memory_size(other.m_max_device_memory_size),
-m_max_subgroup_size(other.m_max_subgroup_size),
-m_staging_allocator(other.m_staging_allocator),
-m_device_allocator(other.m_device_allocator)
+
+
+
+inline bool is_power_of_two(const size_t size)
 {
-	std::memcpy(m_max_work_group_size, other.m_max_work_group_size, sizeof(uint32_t) * 3);
-	std::memcpy(m_max_work_group_count, other.m_max_work_group_count, sizeof(uint32_t) * 3);
-}
-
-device& device::operator=(const device& other)
-{
-	m_device_id = other.m_device_id;
-	m_logical_device = other.m_logical_device;
-	m_physical_device = other.m_physical_device;
-	m_device_properties = other.m_device_properties;
-	m_device_features = other.m_device_features;
-	m_memory_properties = other.m_memory_properties;
-	m_subgroup_properites = other.m_subgroup_properites;
-	m_cmd_queue = other.m_cmd_queue;
-	m_cmd_pool = other.m_cmd_pool;
-	m_max_device_memory_size = other.m_max_device_memory_size;
-	m_max_subgroup_size = other.m_max_subgroup_size;
-	std::memcpy(m_max_work_group_size, other.m_max_work_group_size, sizeof(uint32_t) * 3);
-	std::memcpy(m_max_work_group_count, other.m_max_work_group_count, sizeof(uint32_t) * 3);
-	m_staging_allocator = other.m_staging_allocator;
-	m_device_allocator = other.m_device_allocator;
-	return *this;
-}
-
-void device::cleanup()
-{
-	for (const auto& j : jobs)
-		j->cleanup();
-	m_staging_allocator.cleanup();
-	m_device_allocator.cleanup();
-
-	if(m_cmd_pool != nullptr)
-		vkDestroyCommandPool(m_logical_device, m_cmd_pool, nullptr);
-
-	//	vkDeviceWaitIdle(m_logical_device);
-	if (m_logical_device !=  nullptr)
-		vkDestroyDevice(m_logical_device, nullptr);
-}
-
-device::device() = default;
-
-device::device(size_t device_id, const VkInstance& instance, const VkPhysicalDevice& pDev) : device(device_id, instance, pDev, {}, {})
-{
-}
-
-device::~device() = default;
-
-
-vk_block* device::malloc(size_t size)
-{
-	vk_block* host_block = m_staging_allocator.allocate_buffer(size);
-	vk_block* device_block = m_device_allocator.allocate_buffer(size);
-	return host_block;
-}
-
-void device::free(vk_block** block) const
-{
-	if (m_staging_allocator.deallocate(*block) || m_device_allocator.deallocate(*block))
-		*block = nullptr;
-}
-
-void device::run() const
-{
-	VkFence fence;
-	VkFenceCreateInfo fence_create_info_ = {};
-	fence_create_info_.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	fence_create_info_.flags = 0;
-
-	for (const auto j : jobs)
-	{
-		auto submit_info = j->get_submit_info();
-		vkCreateFence(m_logical_device, &fence_create_info_, nullptr, &fence);
-		vkQueueSubmit(m_cmd_queue, 1, &submit_info, fence);
-		vkWaitForFences(m_logical_device, 1, &fence, VK_TRUE, 100000);
-		vkDestroyFence(m_logical_device, fence, nullptr);
-	}
-
-}
-
-
-inline size_t alignSize(size_t sz, int n) { return (sz + n - 1) & -n; }
-
-void job::bind_buffer(const vk_block* blk, uint32_t i)
-{
-	if (m_pipeline == nullptr)
-		create_pipeline();
-
-	m_set_buffers++;
-
-	VkDescriptorBufferInfo descBufferInfo;
-	descBufferInfo.buffer = blk->buf;
-	descBufferInfo.offset = 0;
-	descBufferInfo.range = blk->size;
-
-	VkWriteDescriptorSet writeDescSet;
-	writeDescSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	writeDescSet.pNext = nullptr;
-	writeDescSet.dstArrayElement = 0;
-	writeDescSet.dstSet = m_descriptor_set;
-	writeDescSet.dstBinding = i;
-	writeDescSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	writeDescSet.descriptorCount = 1;
-	writeDescSet.pBufferInfo = &descBufferInfo;
-	writeDescSet.pTexelBufferView = nullptr;
-	writeDescSet.pImageInfo = nullptr;
-	vkUpdateDescriptorSets(m_device, 1, &writeDescSet, 0, nullptr);
-
-	if (m_set_buffers == m_num_buffers)
-	{
-		record_pipeline();
-		m_set_buffers = 0;
-	}
-
-}
-
-VkSubmitInfo job::get_submit_info() const
-{
-	return m_submit_info;
-}
-
-
-void job::cleanup() const
-{
-	if (m_shader_module != nullptr)
-		vkDestroyShaderModule(m_device, m_shader_module, nullptr);
-	if (m_descriptor_pool != nullptr)
-		vkDestroyDescriptorPool(m_device, m_descriptor_pool, nullptr);
-	if (m_descriptor_set_layout != nullptr)
-		vkDestroyDescriptorSetLayout(m_device, m_descriptor_set_layout, nullptr);
-	if (m_pipeline != nullptr)
-		vkDestroyPipeline(m_device, m_pipeline, nullptr);
-	if (m_pipeline_layout != nullptr)
-		vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
-}
-
-void job::create_pipeline()
-{
-	if (m_compiled_shader_code.empty())
-		std::cerr << "ERROR CODE NOT FOUND\n";
-
-	VkShaderModuleCreateInfo shaderModuleCreateInfo;
-	shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	shaderModuleCreateInfo.pNext = nullptr;
-	shaderModuleCreateInfo.flags = 0;
-	shaderModuleCreateInfo.pCode = m_compiled_shader_code.data();
-	shaderModuleCreateInfo.codeSize = sizeof(uint32_t) * m_compiled_shader_code.size();
-	VkResult result = vkCreateShaderModule(m_device, &shaderModuleCreateInfo, nullptr, &m_shader_module);
-
-	VkPipelineShaderStageCreateInfo pipelineStageCreateInfo;
-	pipelineStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	pipelineStageCreateInfo.pNext = nullptr;
-	pipelineStageCreateInfo.flags = 0;
-	pipelineStageCreateInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-	pipelineStageCreateInfo.module = m_shader_module;
-	pipelineStageCreateInfo.pName = m_kernel_entry.c_str();
-	pipelineStageCreateInfo.pSpecializationInfo = m_specialization_info;
-
-	VkPushConstantRange pushConstantRanges;
-	pushConstantRanges.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-	pushConstantRanges.offset = 0;
-	pushConstantRanges.size = m_push_constants_size;
-
-	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo;
-	pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutCreateInfo.pNext = nullptr;
-	pipelineLayoutCreateInfo.flags = 0;
-	pipelineLayoutCreateInfo.pushConstantRangeCount = m_push_constants_size ? 1 : 0;
-	pipelineLayoutCreateInfo.pPushConstantRanges = m_push_constants_size ? &pushConstantRanges : nullptr;
-	pipelineLayoutCreateInfo.setLayoutCount = 1;
-	pipelineLayoutCreateInfo.pSetLayouts = &m_descriptor_set_layout;
-	result = vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipeline_layout);
-
-	VkComputePipelineCreateInfo computePipelineCreateInfo;
-	computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-	computePipelineCreateInfo.pNext = nullptr;
-	computePipelineCreateInfo.flags = 0;
-	computePipelineCreateInfo.stage = pipelineStageCreateInfo;
-	computePipelineCreateInfo.layout = m_pipeline_layout;
-	computePipelineCreateInfo.basePipelineIndex = -1;
-	computePipelineCreateInfo.basePipelineHandle = nullptr;
-	result = vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &m_pipeline);
-
-	if (result != VK_SUCCESS)
-		std::cerr << "FAILED TO CREATE PIPELINE\n";
-}
-
-void job::record_pipeline()
-{
-	VkCommandBufferBeginInfo cmdBufferBeginInfo;
-	cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	cmdBufferBeginInfo.pNext = nullptr;
-	cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-	//beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-	cmdBufferBeginInfo.pInheritanceInfo = nullptr;
-	VkResult result = vkBeginCommandBuffer(m_cmd_buffer, &cmdBufferBeginInfo);
-
-	if (m_push_constants_size)
-		vkCmdPushConstants(m_cmd_buffer, m_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, m_push_constants_size, m_push_constants);
-
-	vkCmdBindPipeline(m_cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
-	vkCmdBindDescriptorSets(m_cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
-
-	vkCmdDispatch(m_cmd_buffer, m_groups[0], m_groups[1], m_groups[2]);
-
-	result = vkEndCommandBuffer(m_cmd_buffer);
-
-	if (result != VK_SUCCESS)
-		std::cerr << "FAILED TO RECORD CMD BUFFER\n";
-
-	m_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	m_submit_info.commandBufferCount = 1;
-	m_submit_info.pCommandBuffers = &m_cmd_buffer;
-}
-
-job::job() = default;
-
-job::job(const VkDevice& dev, const VkCommandPool& cmd_pool, uint32_t num_buffers, std::string kernel_name) :
-	m_device(dev), m_cmd_pool(cmd_pool), m_num_buffers(num_buffers), m_kernel_type(kernel_name), m_kernel_entry(kernel_name)
-{
-	create();
-}
-
-job::~job()
-{
-	cleanup();
-}
-
-void job::create()
-{
-	std::vector<VkDescriptorSetLayoutBinding> bindings(m_num_buffers);
-	for (unsigned i = 0; i < m_num_buffers; i++)
-	{
-		bindings[i].binding = i;
-		bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		bindings[i].descriptorCount = 1;
-		bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-	}
-
-	VkDescriptorSetLayoutCreateInfo descriptor_set_info = {};
-	descriptor_set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	descriptor_set_info.pNext = nullptr;
-	descriptor_set_info.bindingCount = m_num_buffers;
-	descriptor_set_info.pBindings = &bindings[0];
-	VkResult result = vkCreateDescriptorSetLayout(m_device, &descriptor_set_info, nullptr, &m_descriptor_set_layout);
-
-	VkDescriptorPoolSize pool_size;
-	pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	pool_size.descriptorCount = m_num_buffers;
-
-	VkDescriptorPoolCreateInfo descriptor_pool_info = {};
-	descriptor_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	descriptor_pool_info.pNext = nullptr;
-	descriptor_pool_info.maxSets = 1;
-	descriptor_pool_info.poolSizeCount = 1;
-	descriptor_pool_info.pPoolSizes = &pool_size;
-	result = vkCreateDescriptorPool(m_device, &descriptor_pool_info, nullptr, &m_descriptor_pool);
-
-	VkDescriptorSetAllocateInfo descriptor_allocate_info;
-	descriptor_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	descriptor_allocate_info.pNext = nullptr;
-	descriptor_allocate_info.descriptorPool = m_descriptor_pool;
-	descriptor_allocate_info.descriptorSetCount = 1;
-	descriptor_allocate_info.pSetLayouts = &m_descriptor_set_layout;
-	result = vkAllocateDescriptorSets(m_device, &descriptor_allocate_info, &m_descriptor_set);
-
-	VkCommandBufferAllocateInfo command_buffer_alloc_info;
-	command_buffer_alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	command_buffer_alloc_info.pNext = nullptr;
-	command_buffer_alloc_info.commandPool = m_cmd_pool;
-	command_buffer_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	command_buffer_alloc_info.commandBufferCount = 1;
-	result = vkAllocateCommandBuffers(m_device, &command_buffer_alloc_info, &m_cmd_buffer);
-
-	if (result != VK_SUCCESS)
-		std::cerr << "CANNOT CREATE LAYER\n";
-}
-
-void job::set_push_constants(void* params, uint32_t params_size)
-{
-	m_push_constants = params; m_push_constants_size = params_size;
-}
-
-void job::set_shader(const std::string& shader, VkSpecializationInfo* specialization_info)
-{
-	m_compiled_shader_code = compile(m_kernel_entry, shader);
-	m_specialization_info = specialization_info;
-}
-
-void job::set_group_size(uint32_t x, uint32_t y, uint32_t z)
-{
-	m_groups[0] = x; m_groups[1] = y; m_groups[2] = z;
-}
-
-
-
-std::vector<uint32_t> compile(const std::string shader_entry, const std::string& source, char* filename)
-{
-	char tmp_filename_in[L_tmpnam];
-	char tmp_filename_out[L_tmpnam];
-
-	tmpnam(tmp_filename_in);
-	tmpnam(tmp_filename_out);
-
-	FILE* tmp_file;
-	tmp_file = fopen(tmp_filename_in, "wb+");
-	fputs(source.c_str(), tmp_file);
-	fclose(tmp_file);
-
-	tmp_file = fopen(tmp_filename_out, "wb+");
-	fclose(tmp_file);
-
-	const std::string cmd_str = std::string("glslangValidator -V " + std::string(tmp_filename_in) + " --entry-point " + shader_entry + " --source-entrypoint main -S comp -o " + tmp_filename_out);
-
-	if (system(cmd_str.c_str()))
-		throw std::runtime_error("Error running glslangValidator command");
-	std::ifstream fileStream(tmp_filename_out, std::ios::binary);
-	std::vector<char> buffer;
-	buffer.insert(buffer.begin(), std::istreambuf_iterator<char>(fileStream), {});
-	return { reinterpret_cast<uint32_t*>(buffer.data()), reinterpret_cast<uint32_t*>(buffer.data() + buffer.size()) };
-}
-
-
-
-inline bool isPowerOfTwo(size_t size)
-{
-	const bool ret = (size & (size - 1)) == 0;
+	const bool ret = (size & size - 1) == 0;
 	return ret;
 }
 
@@ -638,105 +217,85 @@ inline size_t power_ceil(size_t x)
 	return power;
 }
 
-inline size_t nextPowerOfTwo(size_t size)
+inline size_t next_power_of_two(const size_t size)
 {
-	const size_t _size = power_ceil(size);
-	return _size << 1;
+	const size_t s = power_ceil(size);
+	return s << 1;
 }
 
-inline int findMemoryTypeIndex(uint32_t memoryTypeBits,
-	const VkPhysicalDeviceMemoryProperties& properties,
-	bool shouldBeDeviceLocal)
+inline int find_memory_type_index(const uint32_t memory_type_bits,
+                               const VkPhysicalDeviceMemoryProperties& properties,
+                               const bool should_be_device_local)
 {
-	auto lambdaGetMemoryType = [&](VkMemoryPropertyFlags propertyFlags) -> int
+	auto lambda_get_memory_type = [&](const VkMemoryPropertyFlags property_flags) -> int
 	{
 		for (uint32_t i = 0; i < properties.memoryTypeCount; ++i)
 		{
-			if ((memoryTypeBits & (1 << i)) && ((properties.memoryTypes[i].propertyFlags & propertyFlags) ==
-				propertyFlags))
+			if (memory_type_bits & 1 << i && (properties.memoryTypes[i].propertyFlags & property_flags) ==
+				property_flags)
 				return i;
 		}
 		return -1;
 	};
 
 
-	if (!shouldBeDeviceLocal)
+	if (!should_be_device_local)
 	{
-		VkMemoryPropertyFlags optimal = VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
+		constexpr VkMemoryPropertyFlags optimal = VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
 			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-		VkMemoryPropertyFlags required = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+		constexpr VkMemoryPropertyFlags required = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 
-		const int type = lambdaGetMemoryType(optimal);
+		const int type = lambda_get_memory_type(optimal);
 		if (type == -1)
 		{
-			const int result = lambdaGetMemoryType(required);
+			const int result = lambda_get_memory_type(required);
 			if (result == -1)
 				throw std::runtime_error("Memory type does not find");
 			return result;
 		}
 		return type;
 	}
-	return lambdaGetMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	return lambda_get_memory_type(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 }
 
-vk_chunk::vk_chunk(size_t device_id, const VkDevice& dev, size_t size, int memoryTypeIndex) : m_device_id(device_id),
-	m_device(dev), m_ptr(nullptr), m_size(size), m_memory_type_index(memoryTypeIndex)
+bool vk_chunk::allocate(const size_t size, const size_t alignment, vk_block** blk)
 {
-	VkMemoryAllocateInfo alloc_info{};
-	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	alloc_info.pNext = nullptr;
-	alloc_info.allocationSize = size;
-	alloc_info.memoryTypeIndex = memoryTypeIndex;
-	const VkResult result = vkAllocateMemory(m_device, &alloc_info, nullptr, &m_memory);
-
-	vk_block blk;
-	blk.device_id = m_device_id;
-	blk.size = size;
-	blk.offset = 0;
-	blk.free = true;
-	blk.memory = m_memory;
-	m_blocks.push_back(std::make_shared<vk_block>(blk));
-	if (result != VK_SUCCESS)
-		std::cerr << "CANNOT CREATE MEMORY\n";
-}
-
-bool vk_chunk::allocate(size_t size, size_t alignment, vk_block** blk)
-{
-	if (size > m_size)
+	if (size_ < size)
 		return false;
-	for (size_t i = 0; i < m_blocks.size(); ++i)
+	for (size_t i = 0; i < blocks_.size(); ++i)
 	{
-		if (m_blocks[i]->free)
+		if (blocks_[i]->free)
 		{
-			size_t new_size = m_blocks[i]->size;
-			if (m_blocks[i]->offset % alignment != 0)
-				new_size -= alignment - m_blocks[i]->offset % alignment;
+			size_t new_size = blocks_[i]->size;
+			if (blocks_[i]->offset % alignment != 0)
+				new_size -= alignment - blocks_[i]->offset % alignment;
 			if (new_size >= size)
 			{
-				m_blocks[i]->size = new_size;
-				if (m_blocks[i]->offset % alignment != 0)
-					m_blocks[i]->offset += alignment - m_blocks[i]->offset % alignment;
-				if (m_blocks[i]->ptr != nullptr)
-					m_blocks[i]->ptr = m_blocks[i]->ptr;
-				if (m_blocks[i]->size == size)
+				blocks_[i]->size = new_size;
+				if (blocks_[i]->offset % alignment != 0)
+					blocks_[i]->offset += alignment - blocks_[i]->offset % alignment;
+				if (blocks_[i]->size == size)
 				{
-					m_blocks[i]->free = false;
-					*blk = m_blocks[i].get();
+					blocks_[i]->free = false;
+					*blk = blocks_[i].get();
 					return true;
 				}
 
-				vk_block nextBlock;
-				nextBlock.free = true;
-				nextBlock.offset = m_blocks[i]->offset + size;
-				nextBlock.size = m_blocks[i]->size - size;
-				nextBlock.memory = m_memory;
-				nextBlock.device_id = m_blocks[i]->device_id;
-				m_blocks.push_back(std::make_shared<vk_block>(nextBlock));
-				m_blocks[i]->size = size;
-				m_blocks[i]->free = false;
+				vk_block next_block;
+				next_block.free = true;
+				next_block.offset = blocks_[i]->offset + size;
+				next_block.size = blocks_[i]->size - size;
+				next_block.memory = memory_;
+				next_block.device_id = blocks_[i]->device_id;
+				next_block.on_device = blocks_[i]->on_device;
+				if (!device_local_ && ptr_ != nullptr)
+					next_block.ptr = next_block.offset + static_cast<char*>(ptr_);
+				blocks_.push_back(std::make_shared<vk_block>(next_block));
+				blocks_[i]->size = size;
+				blocks_[i]->free = false;
 
-				*blk = m_blocks[i].get();
+				*blk = blocks_[i].get();
 				return true;
 			}
 		}
@@ -748,186 +307,247 @@ bool vk_chunk::allocate(size_t size, size_t alignment, vk_block** blk)
 void vk_chunk::collate_delete()
 {
 	bool free_flag = false;
-	size_t free_idx = 0;
-	size_t idx = 0;
-	while (idx < m_blocks.size())
+	uint32_t free_idx = 0;
+	uint32_t idx = 0;
+	while (idx < blocks_.size())
 	{
-		if (m_blocks[idx]->free && !free_flag)
+		if (blocks_[idx]->free && !free_flag)
 		{
 			free_idx = idx;
 			free_flag = true;
 		}
-		else if (m_blocks[idx]->free && free_flag)
+		else if (blocks_[idx]->free && free_flag)
 		{
 			if (idx - 1 == free_idx)
 			{
-				m_blocks[free_idx]->size += m_blocks[idx]->size;
-				m_blocks.erase(m_blocks.begin() + idx);
+				blocks_[free_idx]->size += blocks_[idx]->size;
+				blocks_.erase(idx + blocks_.begin());
 			}
 		}
 		++idx;
 	}
 }
 
+vk_chunk::vk_chunk(const uint32_t device_id, const VkDevice& dev, const size_t size, const int memory_type_index):
+	device_id_(device_id), device_(dev), ptr_(nullptr), size_(size), memory_type_index_(memory_type_index),
+	device_local_(false)
+{
+	VkMemoryAllocateInfo alloc_info{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.pNext = nullptr;
+	alloc_info.allocationSize = size;
+	alloc_info.memoryTypeIndex = memory_type_index;
+	const VkResult result = vkAllocateMemory(device_, &alloc_info, nullptr, &memory_);
+
+	vk_block blk;
+	blk.device_id = device_id_;
+	blk.size = size;
+	blk.offset = 0;
+	blk.free = true;
+	blk.memory = memory_;
+	blk.on_device = true;
+	blocks_.push_back(std::make_shared<vk_block>(blk));
+	if (result != VK_SUCCESS)
+		std::cerr << "CANNOT CREATE MEMORY\n";
+}
+
 
 bool vk_chunk::deallocate(const vk_block* blk) const
 {
-	for (size_t i = 0; i < m_blocks.size(); ++i)
-	{
-		if (*blk == *m_blocks[i])
-		{
-			if (m_blocks[i]->buf != nullptr)
-				vkDestroyBuffer(m_device, m_blocks[i]->buf, nullptr);
-			else if (m_blocks[i]->img != nullptr)
-				vkDestroyImage(m_device, m_blocks[i]->img, nullptr);
-			m_blocks[i]->free = true;
-			return true;
+	return std::ranges::any_of(blocks_, [&](const std::shared_ptr<vk_block>& block){
+			if(*blk == *block && !block->free)
+			{
+				if (block->buf != VK_NULL_HANDLE)
+					vkDestroyBuffer(device_, block->buf, nullptr);
+				else if (block->img != VK_NULL_HANDLE)
+					vkDestroyImage(device_, block->img, nullptr);
+				block->free = true;
+				return true;
+			}
+			return false;
 		}
-	}
-	return false;
+	);
+
 }
+
+VkDeviceMemory vk_chunk::get_memory() const { return memory_; }
 
 
 void vk_chunk::cleanup()
 {
-	for (auto& blk : m_blocks)
-	{
+	if (ptr_ != nullptr)
+		vkUnmapMemory(device_, memory_);
+	for (auto& blk : blocks_)
 		bool deall = deallocate(blk.get());
-	}
-	m_blocks.clear();
-	if (m_ptr != nullptr)
-		vkUnmapMemory(m_device, m_memory);
-	vkFreeMemory(m_device, m_memory, nullptr);
+	blocks_.clear();
+	vkFreeMemory(device_, memory_, nullptr);
 }
 
 void vk_chunk::set_host_visible()
 {
-	m_ptr = nullptr;
-	vkMapMemory(m_device, m_memory, 0, m_size, 0, &m_ptr);
-	for (const auto& blk : m_blocks)
-		blk->ptr = m_ptr;
+	ptr_ = nullptr;
+	vkMapMemory(device_, memory_, 0, size_, 0, &ptr_);
+	for (const auto& blk : blocks_)
+	{
+		blk->ptr = blk->offset + static_cast<char*>(ptr_);
+		blk->on_device = false;
+	}
 }
 
-vk_chunk::~vk_chunk()
+vk_chunk::~vk_chunk() = default;
+
+vk_allocator::vk_allocator() : device_id_(0), chunk_size_(0), alignment_(0), used_mem_(0), max_mem_(0),
+                               device_(nullptr), device_local_(false), properties_()
+
 {
-	//cleanup();
 }
 
-vk_allocator::vk_allocator() : m_size(0), m_alignment(0), m_device(nullptr), m_properties()
+vk_allocator::vk_allocator(const uint32_t device_id, const VkDevice& dev,
+                           const VkPhysicalDeviceMemoryProperties& properties,
+                           const size_t chunk_size, const size_t max_device_cap, const bool make_device_local) :
+	device_id_(device_id),
+	chunk_size_(chunk_size),
+	max_mem_(max_device_cap),
+	device_(dev),
+	device_local_(make_device_local),
+	properties_(properties)
 {
-}
-
-vk_allocator::vk_allocator(size_t device_id, const VkDevice& dev, const VkPhysicalDeviceMemoryProperties& properties, size_t size,
-	bool make_device_local) : m_device_id(device_id), m_size(size), m_device(dev), m_device_local(make_device_local), m_properties(properties)
-{
-	if (!isPowerOfTwo(size))
+	if (!is_power_of_two(chunk_size))
 		throw std::runtime_error("Size must be in allocation of power 2");
 }
 
-vk_block* vk_allocator::allocate_buffer(size_t size)
+vk_allocator::vk_allocator(vk_allocator&& vka) noexcept: device_id_(vka.device_id_), chunk_size_(vka.chunk_size_),
+                                                         used_mem_(vka.used_mem_), max_mem_(vka.max_mem_),
+                                                         device_(vka.device_), device_local_(vka.device_local_),
+                                                         properties_(vka.properties_), chunks_(std::move(vka.chunks_))
 {
-	uint32_t memoryTypeIndex = 0;
-	size_t alignment = 0;
-	VkBuffer buffer{};
-	VkBufferCreateInfo bufferCreateInfo{};
-	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferCreateInfo.pNext = nullptr;
-	bufferCreateInfo.flags = 0;
-	bufferCreateInfo.size = size;
-	bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+}
 
-	//bufferCreateInfo.queueFamilyIndexCount = 1;
-	//bufferCreateInfo.pQueueFamilyIndices = &queueFamilyIndex;
-	/*
-	 *requiredMemorySize += bufferMemoryRequirements.size;
-	 *if (bufferMemoryRequirements.size % bufferMemoryRequirements.alignment != 0)
-	 *	requiredMemorySize += bufferMemoryRequirements.alignment - bufferMemoryRequirements.size % bufferMemoryRequirements.alignment;
-	 */
-	const VkResult result = vkCreateBuffer(m_device, &bufferCreateInfo, nullptr, &buffer);
-	VkMemoryRequirements bufferMemoryRequirements;
-	vkGetBufferMemoryRequirements(m_device, buffer, &bufferMemoryRequirements);
-	alignment = bufferMemoryRequirements.alignment;
-	memoryTypeIndex = findMemoryTypeIndex(bufferMemoryRequirements.memoryTypeBits, m_properties, m_device_local);
+vk_allocator& vk_allocator::operator=(vk_allocator&& vka) noexcept
+{
+	if (this != &vka)
+	{
+		device_id_ = vka.device_id_;
+		chunk_size_ = vka.chunk_size_;
+		used_mem_ = vka.used_mem_;
+		max_mem_ = vka.max_mem_;
+		device_ = vka.device_;
+		device_local_ = vka.device_local_;
+		properties_ = vka.properties_;
+		chunks_ = std::move(vka.chunks_);
+	}
+	return *this;
+}
+
+vk_block* vk_allocator::allocate_buffer(const size_t size, const VkBufferUsageFlags usage)
+{
+	if (size + used_mem_ > max_mem_)
+		return nullptr;
+
+	VkBuffer buffer{};
+	VkBufferCreateInfo buffer_create_info{};
+	buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer_create_info.pNext = nullptr;
+	buffer_create_info.flags = 0;
+	buffer_create_info.size = size;
+	buffer_create_info.usage = usage; 
+	buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // VK_SHARING_MODE_CONCURRENT;
+	buffer_create_info.queueFamilyIndexCount = 0;
+	buffer_create_info.pQueueFamilyIndices = nullptr;
+
+	const VkResult result = vkCreateBuffer(device_, &buffer_create_info, nullptr, &buffer);
+	VkMemoryRequirements buffer_memory_requirements;
+	vkGetBufferMemoryRequirements(device_, buffer, &buffer_memory_requirements);
+	const size_t alignment = buffer_memory_requirements.alignment;
+	uint32_t memory_type_index = find_memory_type_index(buffer_memory_requirements.memoryTypeBits, properties_,
+	                                                 device_local_);
 
 	vk_block* blk = nullptr;
-	for (const auto& chunk : m_chunks)
+	for (const auto& chunk : chunks_)
 	{
 		if (chunk->allocate(size, alignment, &blk))
 		{
 			blk->buf = buffer;
-			vkBindBufferMemory(m_device, blk->buf, blk->memory, blk->offset);
+			vkBindBufferMemory(device_, blk->buf, blk->memory, blk->offset);
+			used_mem_ += size;
 			return blk;
 		}
 	}
 
-	m_size = size > m_size ? nextPowerOfTwo(size) : m_size;
-	m_chunks.push_back(std::make_shared<vk_chunk>(m_device_id, m_device, m_size, memoryTypeIndex));
-	if (!m_chunks.back()->allocate(size, alignment, &blk))
-		throw std::bad_alloc();
+	chunk_size_ = size > chunk_size_ ? next_power_of_two(size) : chunk_size_;
+	chunks_.push_back(std::make_shared<vk_chunk>(device_id_, device_, chunk_size_, memory_type_index));
+	if (!chunks_.back()->allocate(size, alignment, &blk))
+		return nullptr;
 
-	if (!m_device_local)
-		m_chunks.back()->set_host_visible();
+	if (!device_local_)
+		chunks_.back()->set_host_visible();
 
 	blk->buf = buffer;
-	vkBindBufferMemory(m_device, blk->buf, blk->memory, blk->offset);
+	vkBindBufferMemory(device_, blk->buf, blk->memory, blk->offset);
+
+	used_mem_ += size;
 	return blk;
 }
 
 vk_block* vk_allocator::allocate_image()
 {
-	uint32_t memoryTypeIndex = 0;
-	size_t alignment = 0;
-	size_t size = 16;
+	constexpr uint32_t size = 16;
+	if (size + used_mem_ > max_mem_)
+		return nullptr;
 
 	VkImage image{};
-	VkImageCreateInfo imageCreateInfo{};
-	imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	imageCreateInfo.pNext = nullptr;
-	imageCreateInfo.flags = 0;
-	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	const VkResult result = vkCreateImage(m_device, &imageCreateInfo, nullptr, &image);
-	VkMemoryRequirements imageMemoryRequirements;
-	vkGetImageMemoryRequirements(m_device, image, &imageMemoryRequirements);
-	alignment = imageMemoryRequirements.alignment;
-	memoryTypeIndex = findMemoryTypeIndex(imageMemoryRequirements.memoryTypeBits, m_properties, m_device_local);
+
+	VkImageCreateInfo image_create_info{};
+	image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_create_info.pNext = nullptr;
+	image_create_info.flags = 0;
+	image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_create_info.queueFamilyIndexCount = 0;
+	image_create_info.pQueueFamilyIndices = nullptr;
+	const VkResult result = vkCreateImage(device_, &image_create_info, nullptr, &image);
+	VkMemoryRequirements image_memory_requirements;
+	vkGetImageMemoryRequirements(device_, image, &image_memory_requirements);
+	const size_t alignment = image_memory_requirements.alignment;
+	uint32_t memory_type_index = find_memory_type_index(image_memory_requirements.memoryTypeBits, properties_,
+	                                                 device_local_);
 
 	vk_block* blk = nullptr;
-	for (const auto& chunk : m_chunks)
+	for (const auto& chunk : chunks_)
 	{
 		if (chunk->allocate(size, alignment, &blk))
 		{
 			blk->img = image;
+			used_mem_ += size;
 			return blk;
 		}
 	}
 
-	m_size = size > m_size ? nextPowerOfTwo(size) : m_size;
-	m_chunks.push_back(std::make_shared<vk_chunk>(m_device_id, m_device, m_size, memoryTypeIndex));
-	if (!m_chunks.back()->allocate(size, alignment, &blk))
+	chunk_size_ = size > chunk_size_ ? next_power_of_two(size) : chunk_size_;
+	chunks_.push_back(std::make_shared<vk_chunk>(device_id_, device_, chunk_size_, memory_type_index));
+	if (!chunks_.back()->allocate(size, alignment, &blk))
 		throw std::bad_alloc();
 
 	blk->img = image;
-	if (result != VK_SUCCESS)
-		std::cerr << "CANNOT CREATE IMAGE\n";
+	used_mem_ += size;
 	return blk;
 }
 
-bool vk_allocator::deallocate(const vk_block* blk) const
+bool vk_allocator::deallocate(const vk_block* blk)
 {
-	for (const auto& chunk : m_chunks)
+	if (std::ranges::any_of(chunks_, [&](const std::shared_ptr<vk_chunk>& chunk) { return chunk->deallocate(blk); }))
 	{
-		if (chunk->deallocate(blk))
-			return true;
+		used_mem_ -= blk->size;
+		return true;
 	}
+
 	return false;
 }
 
 void vk_allocator::cleanup()
 {
-	for (const auto& chunk : m_chunks)
+	for (const auto& chunk : chunks_)
 		chunk->cleanup();
-	m_chunks.clear();
+	chunks_.clear();
 }
 
 vk_allocator::~vk_allocator() = default;

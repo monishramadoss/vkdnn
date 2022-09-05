@@ -1,40 +1,10 @@
 ﻿// tensor.h : Header file for your target.
 
 #pragma once
-#include <vector>
 #include "../runtime/runtime.h"
-
-
-struct offset
-{
-	size_t upper;
-	size_t lower;
-};
-
-
-class view
-{
-	size_t mNDims;
-	size_t mDataSize;
-
-	size_t* mShape;
-	size_t* mSize;
-	size_t* mStride;
-	offset** mOffset;
-public:
-	view(const size_t* shape, size_t dims, char data_size);
-	~view();
-	[[nodiscard]] size_t ndims() const { return mNDims; }
-	[[nodiscard]] size_t size(size_t idx = 0) const { return mSize[idx]; }
-	[[nodiscard]] size_t shape(size_t idx = 0) const { return mShape[idx]; }
-	[[nodiscard]] size_t bytes_length() const { return mSize[0] * mDataSize; }
-
-	[[nodiscard]] size_t count(size_t start_axis = 0) const { return count(start_axis, mNDims); }
-	[[nodiscard]] size_t count(size_t start_axis, size_t end_axis) const;
-	
-};
-
-
+#include "view.h"
+#include <vector>
+#include <string>
 
 enum DTYPE
 {
@@ -54,21 +24,86 @@ enum DTYPE
 };
 
 
-class tensor 
+class tensor final
 {
-	view m_view;
-	vk_block** m_data;
-	tensor* m_parent;
-	DTYPE m_dType;
+	view view_;
+	vk_block** data_ = nullptr;
+	tensor* parent_ = nullptr;
+	DTYPE d_type_;
+	std::string name_;
 public:
-	explicit tensor(std::vector<size_t>& shape, DTYPE type = FLOAT);
-	explicit tensor(const std::vector<size_t>& shape, DTYPE type = FLOAT);
-	explicit tensor(tensor* ptr, view& view);
-
+	explicit tensor(std::vector<uint32_t>& shape, DTYPE type = FLOAT);
+	explicit tensor(const std::vector<uint32_t>& shape, DTYPE type = FLOAT);
+	explicit tensor(tensor* ptr, view v);
 	~tensor();
-	[[nodiscard]] DTYPE getType() const { return m_dType; }
+
+	//	tensor(const tensor&);
+	//	tensor& operator=(const tensor& t);
+	tensor index(uint32_t i, int dim);
+	tensor& reshape(const std::vector<uint32_t>& shape);
+	tensor& reshape(std::vector<uint32_t>& shape);
+
+	tensor(tensor&& t) noexcept;
+	tensor& operator=(tensor&& t) noexcept;
+
+	[[nodiscard]] DTYPE get_type() const { return d_type_; }
 	[[nodiscard]] vk_block* get_data() const;
-	[[nodiscard]] size_t get_size(size_t i=0) const { return m_view.size(i); }
+	[[nodiscard]] vk_block* get_host_data() const;
+	void sync(bool to_device = true) const;
+
+	void set_data(vk_block*);
+	[[nodiscard]] size_t get_size(const uint32_t i = 0) const { return view_.size(i); }
+	[[nodiscard]] uint32_t get_shape(const uint32_t i = 0) const { return view_.shape(i); }
+	[[nodiscard]] size_t get_bytes_size() const { return view_.bytes_length(); }
+
+	job* parent_job = nullptr;
+
+
+	template <class T>
+	static tensor fill(const std::vector<uint32_t>& shape, T t);
+	template <class T>
+	static tensor zeros(const std::vector<uint32_t>& shape);
+	template <class T>
+	static tensor ones(const std::vector<uint32_t>& shape);
 };
 
 
+inline const char* shader_extensions[]{
+	"", // 0
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable \n", // 1
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable \n", // 2 
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int32: enable \n", // 3
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable \n", // 4
+	"#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable \n", // 5
+	"#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable \n", // 6
+	"#extension GL_EXT_shader_explicit_arithmetic_types_float64 : enable \n" // 7
+};
+
+
+int gen_type(DTYPE type, std::string& type_name);
+
+
+int tensor_injection(std::string& body, std::string& var_name, int i, const tensor& t1);
+
+
+#include "init.h"
+
+
+template <class T>
+tensor tensor::fill(const std::vector<uint32_t>& shape, T t)
+{
+	return constant_t<T>(shape, t);
+}
+
+
+template <class T>
+tensor tensor::zeros(const std::vector<uint32_t>& shape)
+{
+	return constant_t<T>(shape, 0);
+}
+
+template <class T>
+tensor tensor::ones(const std::vector<uint32_t>& shape)
+{
+	return constant_t<T>(shape, 1);
+}

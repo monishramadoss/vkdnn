@@ -1,6 +1,6 @@
-﻿# CMakeList.txt : CMake project for vulkan_dnn, include source and define
+﻿ # CMakeList.txt : CMake project for vulkan_dnn, include source and define
 # project specific logic here.
-#
+
 cmake_minimum_required (VERSION 3.12)
 
 project ("vulkan_dnn")
@@ -20,3 +20,4 @@ add_subdirectory("tensor")
 add_subdirectory("nn")
 add_subdirectory("blas")
 add_subdirectory("base")
+
