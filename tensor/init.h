@@ -44,7 +44,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const int8_t v)
 	tensor t(shape, INT8);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = int8_t(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_int8", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_int8", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -54,7 +54,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const uint8_t v)
 	tensor t(shape, UINT8);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = uint8_t(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_uint8", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_uint8", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -65,7 +65,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const int16_t v)
 	tensor t(shape, HINT);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = int16_t(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_int16", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_int16", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -76,7 +76,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const uint16_t v)
 	tensor t(shape, HUINT);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = uint16_t(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_uint16", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_uint16", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -87,7 +87,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const int v)
 	tensor t(shape, INT);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = int(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_int", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_int", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -98,7 +98,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const uint32_t v)
 	tensor t(shape, UINT);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = uint(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_uint", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_uint", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -109,7 +109,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const int64_t v)
 	tensor t(shape, LINT);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = int64_t(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_int64", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_int64", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -120,7 +120,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const uint64_t v)
 	tensor t(shape, LUINT);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = uint64_t(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_uint64", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_uint64", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -131,7 +131,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const float v)
 	tensor t(shape, FLOAT);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = float(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_float", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_float", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -142,7 +142,7 @@ inline tensor constant_t(const std::vector<uint32_t>& shape, const double v)
 	tensor t(shape, DOUBLE);
 	const fill_param p{static_cast<uint32_t>(t.get_size())};
 	const std::string kernel = singlton_shader_code(fill_shader, "{}[i] = float64_t(" + std::to_string(v) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("constant_double", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("constant_double", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -156,7 +156,7 @@ inline tensor arange_t(const int8_t low, const int8_t high, const int8_t step)
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = int8_t(i * " + std::to_string(step) + " + " +
 	                                                std::to_string(low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("arange_int8", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("arange_int8", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -169,7 +169,7 @@ inline tensor arange_t(const uint8_t low, const uint8_t high, const uint8_t step
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = uint8_t(* i * " + std::to_string(step) + " + " +
 	                                                std::to_string(low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("arange_uint8", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("arange_uint8", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -183,7 +183,7 @@ inline tensor arange_t(const int16_t low, const int16_t high, const int16_t step
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = int16_t(i * " + std::to_string(step) + " + " +
 	                                                std::to_string(low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("fill_int16", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("fill_int16", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -197,7 +197,7 @@ inline tensor arange_t(const uint16_t low, const uint16_t high, const uint16_t s
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = uint16_t(i * " + std::to_string(step) + " + " +
 	                                                std::to_string(low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("arange_uint16", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("arange_uint16", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -211,7 +211,7 @@ inline tensor arange_t(const int low, const int high, const int step)
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = int(i * " + std::to_string(step) + " + " + std::to_string(
 		                                                low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("arange_int", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("arange_int", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -225,7 +225,7 @@ inline tensor arange_t(const uint32_t low, const uint32_t high, const uint32_t s
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = uint(i * " + std::to_string(step) + " + " + std::to_string(
 		                                                low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("arange_uint", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("arange_uint", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -239,7 +239,7 @@ inline tensor arange_t(const int64_t low, const int64_t high, const int64_t step
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = int64_t(i * " + std::to_string(step) + " + " +
 	                                                std::to_string(low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("arange_int64", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("arange_int64", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -253,7 +253,7 @@ inline tensor arange_t(const uint64_t low, const uint64_t high, const uint64_t s
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = uint64_t(i * " + std::to_string(step) + " + " +
 	                                                std::to_string(low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("arange_uint64", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("arange_uint64", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -269,7 +269,7 @@ inline tensor arange_t(const float low, const float high, const float step)
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = float(i * " + std::to_string(step) + " + " +
 	                                                std::to_string(low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("arange_float", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("arange_float", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }
 
@@ -283,6 +283,6 @@ inline tensor arange_t(const double low, const double high, const double step)
 	const std::string kernel = singlton_shader_code(fill_shader,
 	                                                "{}[i] = float64_t(i * " + std::to_string(step) + " + " +
 	                                                std::to_string(low) + ");", t);
-	k_runtime->get_device().make_job<fill_param>("arange_double", kernel, {t.get_data()}, p, set_group_size(p));
+	k_runtime->make_job<fill_param>("arange_double", kernel, {t.get_data()}, p, set_group_size(p));
 	return t;
 }

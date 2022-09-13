@@ -114,9 +114,8 @@ void main() {
 inline void matmul(const tensor& t1, const tensor& t2, const tensor& t3)
 {
     const matmul_parameter p{ t1.get_shape(0), t1.get_shape(1), t2.get_shape(1) };
-    auto& dev = k_runtime->get_device();
     const std::string kernel_code = matmul_shader(matmul_kernel_code, t1, t2, t3);
-    dev.make_job<matmul_parameter>("matmul", kernel_code,{ t1.get_data(), t2.get_data() , t3.get_data()}, p, set_group_size_x(p), set_group_size_y(p));
+    k_runtime->make_job<matmul_parameter>("matmul", kernel_code, { t1.get_data(), t2.get_data() , t3.get_data()}, p, set_group_size_x(p), set_group_size_y(p));
 }
 
 

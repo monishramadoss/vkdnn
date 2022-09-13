@@ -5,6 +5,7 @@
 #include "threads.h"
 #include <vulkan/vulkan.h>
 
+
 #ifdef NDEBUG
 inline bool enable_validation_layers = false;
 #else
@@ -57,7 +58,7 @@ class runtime final
 	device** devices_{};
 	uint32_t device_count_{};
 	VkDebugUtilsMessengerEXT debug_messenger_{};
-	//cmd_thread_pool thread_pool_;
+	std::vector<job*> job_queue_;
 
 	void cleanup() const
 	{
@@ -97,8 +98,7 @@ public:
 			enabled_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 			enabled_extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 			//enabledExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-
-			// for (const VkExtensionProperties& prop : extensionProperties)
+			//for (const VkExtensionProperties& prop : extensionProperties)
 			//     enabledExtensions.push_back(prop.extensionName);
 		}
 
@@ -121,7 +121,6 @@ public:
 		ci_.instance.ppEnabledExtensionNames = enabled_extensions.data();
 
 		VkResult result;
-		;
 		if (enable_validation_layers)
 		{
 			ci_.messenger.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -160,7 +159,7 @@ public:
 			devices_ = new device * [device_count_];
 			result = vkEnumeratePhysicalDevices(instance_, &device_count_, physical_devices_);
 			for (uint32_t i = 0; i < device_count_; ++i)
-				devices_[i] = new device(i, instance_, physical_devices_[i]);
+				devices_[i] = new device(i, device_count_, instance_, physical_devices_[i]);
 		}
 		return *this;
 	}
@@ -169,8 +168,9 @@ public:
 
 	[[nodiscard]] device& get_device(const uint32_t idx = 0) const { return *devices_[idx]; }
 
-	[[nodiscard]] vk_block* malloc(const size_t size, const bool host) const {
-		for (auto i = 0; i < device_count_; ++i)
+	[[nodiscard]] vk_block * malloc(const size_t size, const bool host) const
+	{
+		for (uint32_t i = 0; i < device_count_; ++i)
 		{
 			if (auto* blk = devices_[i]->malloc(size, host))
 				return blk;
@@ -185,11 +185,41 @@ public:
 		get_device(blk->device_id).free(blk);
 	}
 
-	void wait() const{
-		for (auto i = 0; i < device_count_; ++i)
+	void memcpy(vk_block* src, vk_block* dst, const uint32_t src_offset=0, const uint32_t dst_offset=0)
+	{
+		auto* j = new copy(src, dst, src_offset, dst_offset);
+		get_device(dst->device_id).trigger(j);
+		job_queue_.push_back(j);
+	}
+
+	void wait() {
+		for (uint32_t i = 0; i < device_count_; ++i)
 			devices_[i]->wait();
 	}
+
+	template<class P>
+	job* make_job(const std::string& kernel_name, const std::string& kernel, const std::vector<vk_block*> blks, P p,
+		const uint32_t group_size_x=1, const uint32_t group_size_y=1, const uint32_t group_size_z=1);
+
 };
+
+template <class P>
+job* runtime::make_job(const std::string& kernel_name, const std::string& kernel, const std::vector<vk_block*> blks,
+	P p, const uint32_t group_size_x, const uint32_t group_size_y, const uint32_t group_size_z)
+{
+	auto* j = new job(static_cast<uint32_t>(blks.size()), kernel_name);
+	j->set_group_size(group_size_x, group_size_y, group_size_z);
+	j->set_shader(kernel);
+	j->set_push_constants(&p, sizeof(P));
+	for (uint32_t i = 0; i < blks.size(); ++i)
+		j->bind_buffer(blks[i], i, 0);
+
+	get_device(blks[0]->device_id).trigger(j);
+	job_queue_.push_back(j);
+	return j;
+}
+
+
 
 extern runtime* k_runtime;
 runtime* init();

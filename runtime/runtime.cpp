@@ -1,4 +1,3 @@
-#define _CRT_SECURE_NO_WARNINGS
 #include "runtime.h"
 #include "allocator.h"
 #include "job.h"
@@ -29,7 +28,7 @@ device::device(device&& d) noexcept : device_id_(d.device_id_), logical_device_(
                                       , memory_properties_(d.memory_properties_),
                                       subgroup_properites_(d.subgroup_properites_),
                                       cmd_queue_(d.cmd_queue_),
-                                      cmd_pool_(d.cmd_pool_), max_device_memory_size_(d.max_device_memory_size_),
+                                      max_device_memory_size_(d.max_device_memory_size_),
                                       max_host_device_memory_size_(d.max_host_device_memory_size_),
                                       max_subgroup_size_(d.max_subgroup_size_)
                                       , host_coherent_allocator_(std::move(d.host_coherent_allocator_)),
@@ -55,7 +54,6 @@ device& device::operator=(device&& d) noexcept
 		memory_properties_ = d.memory_properties_;
 		subgroup_properites_ = d.subgroup_properites_;
 		cmd_queue_ = d.cmd_queue_;
-		cmd_pool_ = d.cmd_pool_;
 		max_device_memory_size_ = d.max_device_memory_size_;
 		max_host_device_memory_size_ = d.max_host_device_memory_size_;
 		max_subgroup_size_ = d.max_subgroup_size_;
@@ -68,131 +66,6 @@ device& device::operator=(device&& d) noexcept
 	}
 	return *this;
 }
-
-void device::create(const std::vector<const char*>& validation_layers, const std::vector<const char*>& extension_layers)
-{
-	device_properties_.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-	subgroup_properites_.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
-	device_properties_.pNext = &subgroup_properites_;
-
-	vkGetPhysicalDeviceProperties(physical_device_, &device_properties_.properties);
-	vkGetPhysicalDeviceMemoryProperties(physical_device_, &memory_properties_);
-	vkGetPhysicalDeviceFeatures(physical_device_, &device_features_);
-
-	const int device_heap_idx = get_heap_index(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memory_properties_);
-	const int host_heap_idx = get_heap_index(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-	                                         memory_properties_);
-	if (device_heap_idx == -1 || host_heap_idx == -1)
-		throw std::runtime_error("Cannot find device heap");
-
-	limits_ = device_properties_.properties.limits;
-	max_device_memory_size_ = memory_properties_.memoryHeaps[device_heap_idx].size;
-	max_host_device_memory_size_ = memory_properties_.memoryHeaps[host_heap_idx].size;
-	//size_t buffer_copy_alignment = limits_.optimalBufferCopyOffsetAlignment;
-	//size_t buffer_alignment = limits_.minStorageBufferOffsetAlignment;
-
-	max_work_group_count_[0] = limits_.maxComputeWorkGroupCount[0];
-	max_work_group_count_[1] = limits_.maxComputeWorkGroupCount[1];
-	max_work_group_count_[2] = limits_.maxComputeWorkGroupCount[2];
-	max_work_group_size_[0] = limits_.maxComputeWorkGroupSize[0];
-	max_work_group_size_[1] = limits_.maxComputeWorkGroupSize[1];
-	max_work_group_size_[2] = limits_.maxComputeWorkGroupSize[2];
-	max_subgroup_size_ = subgroup_properites_.subgroupSize;
-	device_name = device_properties_.properties.deviceName;
-
-	uint32_t queue_family_count = 0;
-	vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &queue_family_count, nullptr);
-	queue_families_.resize(queue_family_count);
-	vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &queue_family_count, queue_families_.data());
-
-	uint32_t combined_queue_index = 0;
-	std::vector<uint32_t> transfer_queues_idxes{};
-	std::vector<uint32_t> compute_queues_idxes{};
-
-	for (const auto& [queueFlags, queueCount, timestampValidBits, minImageTransferGranularity] : queue_families_)
-	{
-		if (queueFlags & VK_QUEUE_COMPUTE_BIT && queueFlags & VK_QUEUE_TRANSFER_BIT)
-			break;
-		combined_queue_index++;
-	}
-
-	uint32_t idx = 0;
-	for (const auto& [queueFlags, queueCount, timestampValidBits, minImageTransferGranularity] : queue_families_)
-	{
-		if (queueFlags & VK_QUEUE_COMPUTE_BIT)
-			compute_queues_idxes.push_back(idx);
-		else if (queueFlags & VK_QUEUE_TRANSFER_BIT && !(queueFlags & VK_QUEUE_COMPUTE_BIT))
-			transfer_queues_idxes.push_back(idx);
-		idx++;
-	}
-
-	const auto compute_queue_count = queue_families_[compute_queues_idxes.front()].queueCount;
-	std::vector<float> compute_queue_priorities(compute_queue_count);
-	for (uint32_t i = 0; i < compute_queue_count; ++i)
-		compute_queue_priorities[i] = 1 - i / static_cast<float>(compute_queue_count);
-
-	VkDeviceQueueCreateInfo device_compute_queue_create_info{};
-	device_compute_queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	device_compute_queue_create_info.pNext = nullptr;
-	device_compute_queue_create_info.flags = 0;
-	device_compute_queue_create_info.queueCount = compute_queue_count;
-	device_compute_queue_create_info.queueFamilyIndex = compute_queues_idxes.front();
-	device_compute_queue_create_info.pQueuePriorities = compute_queue_priorities.data();
-
-	if (!transfer_queues_idxes.empty())
-	{
-		const auto transfer_queue_count = queue_families_[transfer_queues_idxes.front()].queueCount;
-		std::vector<float> transfer_queue_priortities(transfer_queue_count);
-		for (uint32_t i = 0; i < transfer_queue_count; ++i)
-			transfer_queue_priortities[i] = 1 - i / static_cast<float>(transfer_queue_count);
-
-		VkDeviceQueueCreateInfo transfer_compute_queue_create_info{};
-		transfer_compute_queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		transfer_compute_queue_create_info.pNext = nullptr;
-		transfer_compute_queue_create_info.flags = 0;
-		transfer_compute_queue_create_info.queueCount = transfer_queue_count;
-		transfer_compute_queue_create_info.queueFamilyIndex = transfer_queues_idxes.front();
-		transfer_compute_queue_create_info.pQueuePriorities = transfer_queue_priortities.data();
-	}
-
-	ci_.queue_info = new VkDeviceQueueCreateInfo[1];
-	ci_.queue_info[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	ci_.queue_info[0].pNext = nullptr;
-	ci_.queue_info[0].flags = 0;
-	ci_.queue_info[0].queueCount = 1;
-	ci_.queue_info[0].queueFamilyIndex = 0;
-	ci_.queue_info[0].pQueuePriorities = &queue_priority_;
-
-	ci_.device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	ci_.device.pNext = nullptr;
-	ci_.device.flags = 0;
-	ci_.device.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
-	ci_.device.ppEnabledLayerNames = validation_layers.data();
-	ci_.device.enabledExtensionCount = static_cast<uint32_t>(extension_layers.size());
-	ci_.device.ppEnabledExtensionNames = extension_layers.data();
-	ci_.device.pEnabledFeatures = &device_features_;
-	ci_.device.queueCreateInfoCount = 1;
-	ci_.device.pQueueCreateInfos = ci_.queue_info;
-
-	vkCreateDevice(physical_device_, &ci_.device, nullptr, &logical_device_);
-	vkGetDeviceQueue(logical_device_, 0, 0, &cmd_queue_);
-
-	VkCommandPoolCreateInfo command_pool_create_info{};
-	ci_.cmd_pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	ci_.cmd_pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	ci_.cmd_pool.queueFamilyIndex = combined_queue_index;
-	const VkResult result = vkCreateCommandPool(logical_device_, &ci_.cmd_pool, nullptr, &cmd_pool_);
-
-	host_coherent_allocator_ = vk_allocator(device_id_, logical_device_, memory_properties_, 16384,
-	                                        max_host_device_memory_size_, false);
-	device_allocator_ = vk_allocator(device_id_, logical_device_, memory_properties_, 16384, max_device_memory_size_,
-	                                 true);
-
-	if (result != VK_SUCCESS)
-		std::cerr << "CANNOT CREATE DEVICE\n";
-}
-
-
 
 
 inline bool is_power_of_two(const size_t size)

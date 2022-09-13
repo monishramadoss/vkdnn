@@ -27,7 +27,7 @@ enum DTYPE
 class tensor final
 {
 	view view_;
-	vk_block** data_ = nullptr;
+	vk_block** data_;
 	tensor* parent_ = nullptr;
 	DTYPE d_type_;
 	std::string name_;

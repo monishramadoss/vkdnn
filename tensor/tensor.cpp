@@ -311,9 +311,9 @@ void tensor::sync(const bool to_device) const
 	}
 
 	if (to_device)
-		k_runtime->get_device(data_[0]->device_id).memcpy(data_[1], data_[0], 0, 0);
+		k_runtime->memcpy(data_[1], data_[0], 0, 0);
 	else
-		k_runtime->get_device(data_[1]->device_id).memcpy(data_[0], data_[1], 0, 0);
+		k_runtime->memcpy(data_[0], data_[1], 0, 0);
 }
 
 void tensor::set_data(vk_block* blk)
@@ -397,10 +397,8 @@ int tensor_injection(std::string& body, std::string& var_name, const int i, cons
 	var_name = "tensor_" + std::to_string(i);
 	std::string type_name;
 	const int ext_id = gen_type(t1.get_type(), type_name);
-
 	const std::string buffer_layout = "layout(binding=" + std::to_string(i) + ") buffer buf_" + std::to_string(i) +
-		" { " +
-		type_name + " " + var_name + "[]; };\n";
+		" { " +	type_name + " " + var_name + "[]; };\n";
 	body += buffer_layout;
 	return ext_id;
 }

@@ -9,7 +9,5 @@
 #include "tensor/tensor.h"
 
 #include "base/base.h"
-
-
 #include "nn/nn.h"
 #include "blas/blas.h"
