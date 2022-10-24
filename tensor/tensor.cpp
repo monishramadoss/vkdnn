@@ -231,15 +231,6 @@ tensor::tensor(tensor* ptr, view v) : view_(std::move(v)), data_(nullptr), paren
 }
 
 
-//tensor& tensor::operator=(const tensor& t)
-//{
-//	view_ = t.view_;
-//	data_ = t.data_;
-//	d_type_ = t.d_type_;
-//	parent_ = t.parent_;
-//	return *this;
-//}
-
 tensor tensor::index(const uint32_t i, const int dim)
 {
 	return tensor(this, view_.index(i, dim));
@@ -255,7 +246,7 @@ tensor& tensor::reshape(std::vector<uint32_t>& shape)
 {
 	view_ = view_.reshape(shape.data(), static_cast<uint32_t>(shape.size()));
 	return *this;
-}
+}      
 
 tensor::tensor(tensor&& t) noexcept : view_(std::move(t.view_)), data_(t.data_), parent_(t.parent_), d_type_(t.d_type_),
                                       name_(std::move(t.name_))
@@ -302,6 +293,7 @@ vk_block* tensor::get_host_data() const
 	return data_[1];
 }
 
+
 void tensor::sync(const bool to_device) const
 {
 	if (data_[1] == nullptr)
@@ -320,6 +312,8 @@ void tensor::set_data(vk_block* blk)
 {
 	data_ = &blk;
 }
+
+
 
 int gen_type(const DTYPE type, std::string& type_name)
 {

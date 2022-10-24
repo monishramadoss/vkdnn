@@ -1,6 +1,6 @@
 // reduction.h : Header file for your target.
 
-#pragma onces
+#pragma once
 #include "../tensor/tensor.h"
 
 inline std::string reduction_shader = R"(
@@ -9,6 +9,54 @@ layout(push_constant) uniform pushBlock {
 };
 
 layout(local_size_x_id = 1) in;
+)";
+
+
+inline std::string temp_reduce_sum = R"(
+#version 460
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable
+
+layout(push_constant) uniform pushBlock {
+        uint total;
+};
+
+layout(local_size_x = 32) in;
+
+layout(binding=0) buffer buf_0 { float tensor_0[]; };
+layout(binding=1) buffer buf_1 { float tensor_1[]; };
+shared float data[64];
+
+
+void main()
+{
+    float acc = 0;
+    if(gl_GlobalInvocationID.x < total){
+        acc = tensor_0[gl_GlobalInvocationID.x];
+    }
+    acc = subgroupAdd(acc);
+
+    if(gl_SubgroupInvocationID == 0)
+    {
+        data[gl_SubgroupID] = acc;
+    }
+
+    memoryBarrierShared();
+    barrier();
+
+    if(gl_SubgroupID==0)
+    {
+        acc = gl_SubgroupInvocationID < gl_NumSubgroups ? data[gl_SubgroupInvocationID] : 0;
+        acc = subgroupAdd(acc);
+    }
+
+    if(gl_LocalInvocationID.x == 0)
+    {
+        tensor_1[gl_WorkGroupID.x] = acc;
+    }
+
+}
+
 )";
 
 struct reduction_param
@@ -21,20 +69,12 @@ inline uint32_t set_group_size(reduction_param p)
     return align_size(p.total, 32) / 32;
 }
 
-// Provided by VK_VERSION_1_3
-typedef struct VkPipelineShaderStageRequiredSubgroupSizeCreateInfo {
-    VkStructureType    sType;
-    void* pNext;
-    uint32_t           requiredSubgroupSize;
-} VkPipelineShaderStageRequiredSubgroupSizeCreateInfo;
-
 void reduce_sum(const tensor& t1, const tensor& t2)
 {
     const reduction_param p { static_cast<uint32_t>(t1.get_size()) };
-    const std::string kernel_code = reduction_shader_code_math(reduction_shader, "subgroupAdd(acc)", t1, t2);
-    std::cout << kernel_code;
-
-    k_runtime->make_job<reduction_param>("reduce_add", kernel_code, { t1.get_data(), t2.get_data()},
+    // const std::string kernel_code = reduction_shader_code_math(reduction_shader, "subgroupAdd(acc)", t1, t2);
+   
+    k_runtime->make_job<reduction_param>("reduce_add", temp_reduce_sum, { t1.get_data(), t2.get_data()},
         p, set_group_size(p));
 }
 
@@ -66,6 +106,10 @@ void reduce_max(const tensor& t1, const tensor& t2)
 
 }
 
+void reduce_mean(const tensor& t1, const tensor& t2)
+{
+    
+}
 
 /*
  *

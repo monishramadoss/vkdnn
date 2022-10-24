@@ -30,6 +30,7 @@ inline std::string unary_shader_code(const std::string& kernel_shader_code, cons
 	std::string shader_tensor[2];
 	const int ext_int_0 = tensor_injection(local_shader, shader_tensor[0], 0, t1);
 	const int ext_int_1 = tensor_injection(local_shader, shader_tensor[1], 1, t2);
+
 	if (ext_int_0 == ext_int_1)
 		local_shader = shader_extensions[ext_int_0] + local_shader;
 	else
@@ -48,10 +49,10 @@ inline std::string binary_shader_code(const std::string& kernel_shader_code, con
 {
 	std::string local_shader = kernel_shader_code;
 	std::string shader_tensor[3];
-
 	const int ext_int_0 = tensor_injection(local_shader, shader_tensor[0], 0, t1);
 	const int ext_int_1 = tensor_injection(local_shader, shader_tensor[1], 1, t2);
 	const int ext_int_2 = tensor_injection(local_shader, shader_tensor[2], 2, t3);
+
 	if (ext_int_0 == ext_int_1 && ext_int_0 == ext_int_2)
 		local_shader = shader_extensions[ext_int_0] + local_shader;
 	else if (ext_int_0 == ext_int_1 && ext_int_0 != ext_int_2)
@@ -88,6 +89,7 @@ inline std::string reduction_shader_code_math(const std::string& kernel_shader_c
 	std::string shader_tensor[2];
 	const int ext_int_0 = tensor_injection(local_shader, shader_tensor[0], 0, t1);
 	const int ext_int_1 = tensor_injection(local_shader, shader_tensor[1], 1, t2);
+
 	if (ext_int_0 == ext_int_1)
 		local_shader = shader_extensions[ext_int_0] + local_shader;
 	else
@@ -106,9 +108,86 @@ inline std::string reduction_shader_code_math(const std::string& kernel_shader_c
 		"[gl_GlobalInvocationID.x];\n\t}\n\tacc = " + fn_pass +
 		";\n\n\tif(gl_SubgroupInvocationID == 0)\n\t{\n\t\tsdata[gl_SubgroupID] = acc;\n\t}\n\n\tmemoryBarrierShared();\n\tbarrier();\n\n\tif(gl_SubgroupID==0)\n\t{\n\t\tacc = gl_SubgroupInvocationID < gl_NumSubgroups ? sdata[gl_SubgroupInvocationID] : 0;\n\t\tacc = "
 		+ fn_pass + ";\n\t}\n\n\tif(gl_LocalInvocationID.x == 0)\n\t{\n\t\t" + shader_tensor[1] +
-		"[gl_WorkGroupID.x] = gl_SubgroupInvocationID;\n\t}\n}";
+		"[gl_WorkGroupID.x] = acc;\n\t}\n}";
 
 
+
+	return local_shader;
+}
+
+inline std::string* parameter_shader_code(std::string& local_shader, const tensor& pt, const tensor& t1, const tensor& t2)
+{
+	std::string shader_tensor[3];
+	const int ext_int_0 = tensor_injection(local_shader, shader_tensor[0], 0, pt);
+	const int ext_int_1 = tensor_injection(local_shader, shader_tensor[1], 1, t1);
+	const int ext_int_2 = tensor_injection(local_shader, shader_tensor[2], 2, t2);
+
+	if (ext_int_0 == ext_int_1 && ext_int_0 == ext_int_2)
+		local_shader = shader_extensions[ext_int_0] + local_shader;
+	else if (ext_int_0 == ext_int_1 && ext_int_0 != ext_int_2)
+	{
+		local_shader = shader_extensions[ext_int_0] + local_shader;
+		local_shader = shader_extensions[ext_int_2] + local_shader;
+	}
+	else if (ext_int_0 != ext_int_1 && ext_int_0 == ext_int_2)
+	{
+		local_shader = shader_extensions[ext_int_0] + local_shader;
+		local_shader = shader_extensions[ext_int_1] + local_shader;
+	}
+	else if (ext_int_1 == ext_int_2 && ext_int_0 != ext_int_1)
+	{
+		local_shader = shader_extensions[ext_int_1] + local_shader;
+		local_shader = shader_extensions[ext_int_2] + local_shader;
+	}
+	else
+	{
+		local_shader = shader_extensions[ext_int_0] + local_shader;
+		local_shader = shader_extensions[ext_int_1] + local_shader;
+		local_shader = shader_extensions[ext_int_2] + local_shader;
+	}
+	local_shader = SHADER_VERSION + local_shader;
+
+	return shader_tensor;
+}
+
+
+inline std::string transpose_kernel_code(const std::string& kernel_shader_code, const tensor& pt, const tensor& t1, const tensor& t2)
+{
+	std::string local_shader = kernel_shader_code;
+	const std::string* shader_tensor = parameter_shader_code(local_shader, pt, t1, t2);
+
+	local_shader += R"(
+void main() {
+for (uint i = gl_GlobalInvocationID.x; i < total; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x)
+{
+	uint old_pos = 0;
+	uint new_pos = i;
+	for(uint j = 0; j < ndims; ++j)
+	{
+		uint order = )" + shader_tensor[0] + "[j];\n\t\t" +
+		"old_pos += (new_pos / " + shader_tensor[0] + "[ndims + j]) * " + shader_tensor[0] + "[ndims * 2 + order];\n\t\t" +
+		"new_pos %= " + shader_tensor[0] + "[ndims + j];\n\t\t\n\t" +
+		"}\n\t" +
+		shader_tensor[2] + "[i] = " + shader_tensor[1] + "[abs(old_pos)];\n\t" +
+		"}\n}";
+	return local_shader;
+}
+
+
+
+inline std::string unfold_kernel_code(const std::string& kernel_shader_code, const tensor& pt, const tensor& t1, const tensor& t2)
+{
+	std::string local_shader = kernel_shader_code;
+	const std::string* shader_tensor = parameter_shader_code(local_shader, pt, t1, t2);
+	local_shader += R"(
+void main() {
+	for(uint i = gl_GlobalInvocationID.x; i < output_size; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x){
+		for(uint j = gl_GlobalInvocationID.y; j < kernel_size; j += gl_NumWorkGroups.y * gl_WorkGroupSize.y){
+			
+		}
+	}
+}
+)";
 
 	return local_shader;
 }

@@ -23,9 +23,22 @@ enum DTYPE
 	BOOL = 12,
 };
 
+enum  CHUNK_PROTOCOL
+{
+	ROW_SPEC = 1,
+	COL_SPEC = 2,
+	ALL_SPEC = 3,
+};
+
+struct chunk_spec
+{
+	CHUNK_PROTOCOL spec;
+	uint32_t dim;
+};
 
 class tensor final
 {
+	chunk_spec cspec_;
 	view view_;
 	vk_block** data_;
 	tensor* parent_ = nullptr;
@@ -37,11 +50,10 @@ public:
 	explicit tensor(tensor* ptr, view v);
 	~tensor();
 
-	//	tensor(const tensor&);
-	//	tensor& operator=(const tensor& t);
 	tensor index(uint32_t i, int dim);
 	tensor& reshape(const std::vector<uint32_t>& shape);
 	tensor& reshape(std::vector<uint32_t>& shape);
+
 
 	tensor(tensor&& t) noexcept;
 	tensor& operator=(tensor&& t) noexcept;
@@ -53,9 +65,10 @@ public:
 
 	void set_data(vk_block*);
 	[[nodiscard]] size_t get_size(const uint32_t i = 0) const { return view_.size(i); }
+	[[nodiscard]] uint32_t get_dims() const { return view_.ndims(); }
 	[[nodiscard]] uint32_t get_shape(const uint32_t i = 0) const { return view_.shape(i); }
 	[[nodiscard]] size_t get_bytes_size() const { return view_.bytes_length(); }
-
+	[[nodiscard]] bool is_empty() const { return get_bytes_size() == 0; }
 	job* parent_job = nullptr;
 
 
