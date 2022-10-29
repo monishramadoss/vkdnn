@@ -43,7 +43,7 @@ inline std::vector<uint32_t> compile(const std::string& shader_entry, const std:
 	i = fclose(tmp_file);
 
 #endif
-
+	std::cout << source << "\n";
 	const auto cmd_str = std::string(
 		"glslangValidator -V --quiet --target-env vulkan1.2 " + std::string(tmp_filename_in) + " --entry-point " + shader_entry +
 		" --source-entrypoint main -S comp -o " + tmp_filename_out
@@ -94,7 +94,7 @@ enum op_type
 };
 
 
-class generation_data
+class job_create_info_data
 {
 public:
 	VkDevice device = nullptr;
@@ -211,7 +211,7 @@ class job
 {
 protected:
 	job_create_info ci_;
-	generation_data gd_;
+	job_create_info_data gd_;
 
 	VkDescriptorSetLayout descriptor_set_layout_{};
 	VkDescriptorPool descriptor_pool_{};
@@ -398,7 +398,7 @@ public:
 	}
 		
 
-	virtual generation_data* generation_data(const VkDevice device, const VkCommandPool cmd_pool) 
+	virtual job_create_info_data* generation_data(const VkDevice device, const VkCommandPool cmd_pool) 
 	{
 		ci_.command_buffer_alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		ci_.command_buffer_alloc.pNext = nullptr;
@@ -424,7 +424,7 @@ public:
 };
 
 
-class copy_generation_data final : public generation_data
+class copy_generation_data final : public job_create_info_data
 {
 public:
 	VkBufferCopy copy_region{};

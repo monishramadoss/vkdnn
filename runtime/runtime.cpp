@@ -7,7 +7,9 @@
 #include <iostream>
 #include <map>
 #include <fstream>
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <vulkan/vulkan.h>
 
 
@@ -21,6 +23,13 @@ runtime* init()
 	return k_runtime;
 }
 
+#ifdef __linux__
+#define MEMCPY memcpy
+#elif _WIN32
+#define MEMCPY MEMCPY
+#else
+
+#endif
 
 device::device(device&& d) noexcept : device_id_(d.device_id_), logical_device_(d.logical_device_),
                                       physical_device_(d.physical_device_), device_properties_(d.device_properties_),
@@ -37,8 +46,8 @@ device::device(device&& d) noexcept : device_id_(d.device_id_), logical_device_(
                                       queue_priority_(d.queue_priority_), device_name(d.device_name)
 {
 	d.wait();
-	std::memcpy(max_work_group_size_, d.max_work_group_size_, sizeof(uint32_t) * 3);
-	std::memcpy(max_work_group_count_, d.max_work_group_count_, sizeof(uint32_t) * 3);
+	MEMCPY(max_work_group_size_, d.max_work_group_size_, sizeof(uint32_t) * 3);
+	MEMCPY(max_work_group_count_, d.max_work_group_count_, sizeof(uint32_t) * 3);
 }
 
 device& device::operator=(device&& d) noexcept
@@ -57,8 +66,8 @@ device& device::operator=(device&& d) noexcept
 		max_device_memory_size_ = d.max_device_memory_size_;
 		max_host_device_memory_size_ = d.max_host_device_memory_size_;
 		max_subgroup_size_ = d.max_subgroup_size_;
-		std::memcpy(max_work_group_size_, d.max_work_group_size_, sizeof(uint32_t) * 3);
-		std::memcpy(max_work_group_count_, d.max_work_group_count_, sizeof(uint32_t) * 3);
+		MEMCPY(max_work_group_size_, d.max_work_group_size_, sizeof(uint32_t) * 3);
+		MEMCPY(max_work_group_count_, d.max_work_group_count_, sizeof(uint32_t) * 3);
 		host_coherent_allocator_ = std::move(d.host_coherent_allocator_);
 		device_allocator_ = std::move(d.device_allocator_);
 		device_name = d.device_name;
@@ -227,7 +236,7 @@ vk_chunk::vk_chunk(const uint32_t device_id, const VkDevice& dev, const size_t s
 
 bool vk_chunk::deallocate(const vk_block* blk) const
 {
-	return std::ranges::any_of(blocks_, [&](const std::shared_ptr<vk_block>& block){
+	return std::any_of(blocks_.begin(), blocks_.end(), [&](const std::shared_ptr<vk_block>& block){
 			if(*blk == *block && !block->free)
 			{
 				if (block->buf != VK_NULL_HANDLE)
@@ -407,7 +416,7 @@ vk_block* vk_allocator::allocate_image()
 
 bool vk_allocator::deallocate(const vk_block* blk)
 {
-	if (std::ranges::any_of(chunks_, [&](const std::shared_ptr<vk_chunk>& chunk) { return chunk->deallocate(blk); }))
+	if (std::any_of(chunks_.begin(), chunks_.end(), [&](const std::shared_ptr<vk_chunk>& chunk) { return chunk->deallocate(blk); }))
 	{
 		used_mem_ -= blk->size;
 		return true;

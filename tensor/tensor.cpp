@@ -4,6 +4,7 @@
 #include "tensor.h"
 #include <vector>
 #include <memory>
+#include <cstring>
 #include <iostream>
 
 size_t k_tensor_count = 0;

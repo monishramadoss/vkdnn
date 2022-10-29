@@ -29,7 +29,7 @@ inline void eq(const tensor& t1, const tensor& t2, const tensor& t3)
 		throw std::runtime_error("Incorrect return type");
 
 
-	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] == {}[i];", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "%s[i] = %s[i] == %s[i];", t1, t2, t3);
 	k_runtime->make_job<logic_parameter>("eq", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                 p, set_group_size(p));
 }
@@ -40,7 +40,7 @@ inline void ne(const tensor& t1, const tensor& t2, const tensor& t3)
 	if (t3.get_type() != BOOL)
 		throw std::runtime_error("Incorrect return type");
 
-	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] != {1}[i];", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "%s[i] = %s[i] != %s[i];", t1, t2, t3);
 	k_runtime->make_job<logic_parameter>("ne", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                 p, set_group_size(p));
 }
@@ -51,7 +51,7 @@ inline void lt(const tensor& t1, const tensor& t2, const tensor& t3)
 	if (t3.get_type() != BOOL)
 		throw std::runtime_error("Incorrect return type");
 
-	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] < {1}[i];", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "%s[i] = %s[i] < %s[i];", t1, t2, t3);
 	k_runtime->make_job<logic_parameter>("lt", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                 p, set_group_size(p));
 }
@@ -62,7 +62,7 @@ inline void gt(const tensor& t1, const tensor& t2, const tensor& t3)
 	if (t3.get_type() != BOOL)
 		throw std::runtime_error("Incorrect return type");
 
-	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] > {1}[i];", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "%s[i] = %s[i] > %s[i];", t1, t2, t3);
 	k_runtime->make_job<logic_parameter>("gt", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                 p, set_group_size(p));
 }
@@ -73,7 +73,7 @@ inline void le(const tensor& t1, const tensor& t2, const tensor& t3)
 	if (t3.get_type() != BOOL)
 		throw std::runtime_error("Incorrect return type");
 
-	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] <= {1}[i];", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "%s[i] = %s[i] <= %s[i];", t1, t2, t3);
 	k_runtime->make_job<logic_parameter>("le", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                 p, set_group_size(p));
 }
@@ -84,7 +84,7 @@ inline void ge(const tensor& t1, const tensor& t2, const tensor& t3)
 	if (t3.get_type() != BOOL)
 		throw std::runtime_error("Incorrect return type");
 
-	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] >= {1}[i];", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "%s[i] = %s[i] >= %s[i];", t1, t2, t3);
 	k_runtime->make_job<logic_parameter>("ge", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                 p, set_group_size(p));
 }
@@ -95,7 +95,7 @@ inline void bang(const tensor& t1, const tensor& t2)
 	if (t2.get_type() != BOOL || t1.get_type() != BOOL)
 		throw std::runtime_error("Incorrect return type");
 
-	const std::string kernel_code = unary_shader_code(binary_shader, "{1}[i] = !{0}[i];", t1, t2);
+	const std::string kernel_code = unary_shader_code(binary_shader, "%s[i] = !%s[i];", t1, t2);
 	k_runtime->make_job<logic_parameter>("bang", kernel_code, {t1.get_data(), t2.get_data()}, p,
 	                                                 set_group_size(p));
 }
@@ -106,7 +106,7 @@ inline void logical_xor(const tensor& t1, const tensor& t2, const tensor& t3)
 	if (t3.get_type() != BOOL || t1.get_type() != BOOL || t2.get_type() != BOOL)
 		throw std::runtime_error("Incorrect return type");
 
-	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] ^^ {1}[i];", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "%s[i] = %s[i] ^^ %s[i];", t1, t2, t3);
 	k_runtime->make_job<logic_parameter>("xor", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                 p, set_group_size(p));
 }
@@ -117,7 +117,7 @@ inline void logical_and(const tensor& t1, const tensor& t2, const tensor& t3)
 	if (t3.get_type() != BOOL || t1.get_type() != BOOL || t2.get_type() != BOOL)
 		throw std::runtime_error("Incorrect return type");
 
-	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] && {1}[i];", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "%s[i] = %s[i] && %s[i];", t1, t2, t3);
 	k_runtime->make_job<logic_parameter>("and", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                 p, set_group_size(p));
 }
@@ -128,7 +128,7 @@ inline void logical_or(const tensor& t1, const tensor& t2, const tensor& t3)
 	if (t3.get_type() != BOOL || t1.get_type() != BOOL || t2.get_type() != BOOL)
 		throw std::runtime_error("Incorrect return type");
 
-	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] || {1}[i];", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "%s[i] = %s[i] || %s[i];", t1, t2, t3);
 	k_runtime->make_job<logic_parameter>("or", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                 p, set_group_size(p));
 }

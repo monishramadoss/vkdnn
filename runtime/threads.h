@@ -7,7 +7,7 @@
 #include <thread>
 #include <functional>
 #include <iostream>
-
+#include <condition_variable>
 #include <vulkan/vulkan.h>
 
 
@@ -16,7 +16,7 @@ class device_submission_thread final
 private:
 	bool destroying_ = false;
 	std::thread worker_ {};
-	std::queue<generation_data*> job_queue_ {};
+	std::queue<job_create_info_data*> job_queue_ {};
 	std::mutex queue_mutex_ {};
 	std::condition_variable condition_ {};
 
@@ -38,7 +38,7 @@ private:
 		while (true)
 		{
 			
-			generation_data* job{};
+			job_create_info_data* job{};
 			{
 				std::unique_lock<std::mutex> lock(queue_mutex_);
 				condition_.wait(lock, [this] { return !job_queue_.empty() || destroying_; });
@@ -119,7 +119,7 @@ public:
 		}
 	}
 
-	void add_job(generation_data* function)
+	void add_job(job_create_info_data* function)
 	{
 		std::lock_guard<std::mutex> lock(queue_mutex_);
 		job_queue_.push(function);
@@ -142,7 +142,7 @@ class generation_thread final
 private:
 	bool destroying_ = false;
 	std::thread worker_{};
-	std::queue<generation_data*> job_queue_{};
+	std::queue<job_create_info_data*> job_queue_{};
 	std::mutex queue_mutex_{};
 	std::condition_variable condition_{};
 	
@@ -153,7 +153,7 @@ private:
 	{
 		while (true)
 		{
-			generation_data* job{};
+			job_create_info_data* job{};
 			{
 				std::unique_lock<std::mutex> lock(queue_mutex_);
 				condition_.wait(lock, [this] { return !job_queue_.empty() || destroying_; });
@@ -196,7 +196,7 @@ public:
 		}
 	}
 
-	void add_job(generation_data* data)
+	void add_job(job_create_info_data* data)
 	{
 		data->device = device_;
 		data->cmd_pool = cmd_pool_;
@@ -268,7 +268,7 @@ public:
 		}
 	}
 
-	void add_job(generation_data* data)
+	void add_job(job_create_info_data* data)
 	{
 		const auto idx = (thread_id_++) % num_threads_;
 		generation_threads_[idx].add_job(data);

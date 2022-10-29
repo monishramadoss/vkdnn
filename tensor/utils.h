@@ -1,5 +1,10 @@
 #pragma once
-#include <format>
+
+#include <string>
+#include <memory>
+#include <stdexcept>
+#include <string_view>
+
 #define SHADER_VERSION "#version 460\n"
 #define SUBGROUP_ENABLE "#extension GL_KHR_shader_subgroup_arithmetic : enable\n"
 
@@ -7,8 +12,17 @@
 template<typename... Args>
 std::string Format(const std::string_view message, Args... formatItems)
 {
-	return std::vformat(message, std::make_format_args(std::forward<Args>(formatItems)...));
+	auto x = message.data();
+
+	int size_s = std::snprintf( nullptr, 0, x, formatItems ... ) + 1; // Extra space for '\0'
+    if( size_s <= 0 ){ throw std::runtime_error( "Error during formatting." ); }
+    auto size = static_cast<size_t>( size_s );
+    std::unique_ptr<char[]> buf( new char[ size ] );
+    std::snprintf( buf.get(), size, x, formatItems ... );
+	
+	return  std::string(buf.get(), buf.get() + size - 1);
 }
+
 
 inline std::string singlton_shader_code(const std::string& kernel_shader_code, const std::string_view fn_pass, const tensor& t1)
 {
@@ -41,11 +55,11 @@ inline std::string unary_shader_code(const std::string& kernel_shader_code, cons
 	local_shader = SHADER_VERSION + local_shader;
 
 	local_shader += "\nvoid main() {\n\tfor (uint i = gl_GlobalInvocationID.x; i < total; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x){\n\t\t";
-	local_shader += Format(fn_pass, shader_tensor[0].c_str(), shader_tensor[1].c_str()) + "\n\t}\n}";
+	local_shader += Format(fn_pass, shader_tensor[1].c_str(), shader_tensor[0].c_str()) + "\n\t}\n}";
 	return local_shader;
 }
 
-inline std::string binary_shader_code(const std::string& kernel_shader_code, const std::string_view& fn_pass, const tensor& t1, const tensor& t2, const tensor& t3)
+inline std::string binary_shader_code(const std::string& kernel_shader_code, const std::string_view fn_pass, const tensor& t1, const tensor& t2, const tensor& t3)
 {
 	std::string local_shader = kernel_shader_code;
 	std::string shader_tensor[3];
@@ -79,11 +93,11 @@ inline std::string binary_shader_code(const std::string& kernel_shader_code, con
 	local_shader = SHADER_VERSION + local_shader;
 
 	local_shader += "\nvoid main() {\n\tfor (uint i = gl_GlobalInvocationID.x; i < total; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x){\n\t\t";
-	local_shader += Format(fn_pass, shader_tensor[0].c_str(), shader_tensor[1].c_str(), shader_tensor[2].c_str()) + "\n\t}\n}";
+	local_shader += Format(fn_pass, shader_tensor[2].c_str(), shader_tensor[0].c_str(), shader_tensor[1].c_str()) + "\n\t}\n}";
 	return local_shader;
 }
 
-inline std::string reduction_shader_code_math(const std::string& kernel_shader_code, const std::string& fn_pass, const tensor& t1, const tensor& t2)
+inline std::string reduction_shader_code_math(const std::string& kernel_shader_code, const std::string fn_pass, const tensor& t1, const tensor& t2)
 {
 	std::string local_shader = kernel_shader_code;
 	std::string shader_tensor[2];
@@ -170,6 +184,8 @@ for (uint i = gl_GlobalInvocationID.x; i < total; i += gl_NumWorkGroups.x * gl_W
 		"}\n\t" +
 		shader_tensor[2] + "[i] = " + shader_tensor[1] + "[abs(old_pos)];\n\t" +
 		"}\n}";
+
+
 	return local_shader;
 }
 
