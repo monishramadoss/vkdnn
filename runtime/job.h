@@ -13,7 +13,9 @@
 #include <vulkan/vulkan.h>
 
 #include "allocator.h"
-
+#ifdef __linux__
+#include <stdlib.h>
+#endif
 
 extern std::map<std::string, size_t> k_kernel_name_count;
 
@@ -33,16 +35,22 @@ inline std::vector<uint32_t> compile(const std::string& shader_entry, const std:
 	auto err4 = fopen_s(&tmp_file, tmp_filename_out, "wb+");
 	i = fclose(tmp_file);
 #else
+	
+	
 	tmpnam(tmp_filename_in);
 	tmpnam(tmp_filename_out);
 
 	tmp_file = fopen(tmp_filename_in, "wb+");
-	auto i = fputs(source.c_str(), tmp_file);
+	int i = fputs(source.c_str(), tmp_file);
 	i = fclose(tmp_file);
 	tmp_file = fopen(tmp_filename_out, "wb+");
 	i = fclose(tmp_file);
 
 #endif
+	
+	if(i != 0)
+		throw std::runtime_error("Error loading or creating temp file");
+	
 	std::cout << source << "\n";
 	const auto cmd_str = std::string(
 		"glslangValidator -V --quiet --target-env vulkan1.2 " + std::string(tmp_filename_in) + " --entry-point " + shader_entry +

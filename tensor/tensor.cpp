@@ -89,21 +89,21 @@ view::view(const view& v) : n_dims_(v.n_dims_), data_size_(v.data_size_), shape_
                             size_(new size_t[n_dims_ + 1]), stride_(new size_t[n_dims_]),
                             n_offsets_(v.n_offsets_), offset_(new offset*[n_offsets_])
 {
-	memcpy(shape_, v.shape_, n_dims_ * sizeof(uint32_t));
-	memcpy(stride_, v.stride_, n_dims_ * sizeof(uint32_t));
-	memcpy(offset_, v.offset_, n_offsets_ * sizeof(offset*));
-	memcpy(size_, v.size_, (1llu + n_dims_) * sizeof(uint32_t));
+	std::memcpy(shape_, v.shape_, n_dims_ * sizeof(uint32_t));
+	std::memcpy(stride_, v.stride_, n_dims_ * sizeof(uint32_t));
+	std::memcpy(offset_, v.offset_, n_offsets_ * sizeof(offset*));
+	std::memcpy(size_, v.size_, (1llu + n_dims_) * sizeof(uint32_t));
 }
 
 view::view(view&& v) noexcept : n_dims_(v.n_dims_), data_size_(v.data_size_), shape_(new uint32_t[n_dims_]),
                                 size_(new size_t[n_dims_ + 1]), stride_(new size_t[n_dims_]),
                                 n_offsets_(v.n_offsets_), offset_(new offset*[n_offsets_])
 {
-	memcpy(shape_, v.shape_, sizeof v.shape_);
-	memcpy(stride_, v.stride_, sizeof v.stride_);
+	std::memcpy(shape_, v.shape_, sizeof v.shape_);
+	std::memcpy(stride_, v.stride_, sizeof v.stride_);
 	if (n_offsets_ != 0)
-		memcpy(offset_, v.offset_, sizeof v.offset_);
-	memcpy(size_, v.size_, sizeof v.size_);
+		std::memcpy(offset_, v.offset_, sizeof v.offset_);
+	std::memcpy(size_, v.size_, sizeof v.size_);
 }
 
 view& view::operator=(view&& v) noexcept
@@ -115,14 +115,14 @@ view& view::operator=(view&& v) noexcept
 		shape_ = new uint32_t[n_dims_];
 		size_ = new size_t[n_dims_ + 1];
 		stride_ = new size_t[n_dims_];
-		n_offsets_ = n_offsets_;
+		n_offsets_ = v.n_offsets_;
 		offset_ = new offset*[n_offsets_];
 
-		memcpy(shape_, v.shape_, sizeof v.shape_);
-		memcpy(stride_, v.stride_, sizeof v.stride_);
+		std::memcpy(shape_, v.shape_, sizeof v.shape_);
+		std::memcpy(stride_, v.stride_, sizeof v.stride_);
 		if (n_offsets_ != 0)
-			memcpy(offset_, v.offset_, sizeof v.offset_);
-		memcpy(size_, v.size_, sizeof v.size_);
+			std::memcpy(offset_, v.offset_, sizeof v.offset_);
+		std::memcpy(size_, v.size_, sizeof v.size_);
 	}
 	return *this;
 }

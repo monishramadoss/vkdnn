@@ -8,7 +8,7 @@ def im2col_get_pixel(im, height, width, channel, row, col):
   
     if row < 0 or col < 0 or row >= height or col >= width:
         return 0
-    return im[int(col + width * (row + height * channel))] # batch*w*h*c + width*height*channel + width*row + col
+    return im[int(col + width * (row + height * channel))] # batch*width*height*channel + width*height*channel + width*row + col
 
 
 def darknet_img2col(data, channels, height, width, ksize, stride, pad):
@@ -40,7 +40,8 @@ def darknet_img2col(data, channels, height, width, ksize, stride, pad):
 
 
 x = np.arange(0, 9).astype(np.float32)
-out = darknet_img2col(x, channels=1, height=3, width=3, ksize=2, stride=1, pad=0)
+x2 = np.arange(0, 18).astype(np.float32)
+out = darknet_img2col(x2, channels=2, height=3, width=3, ksize=2, stride=1, pad=0)
 print(out)
 print()
 
@@ -73,14 +74,16 @@ def output(dim, ndims, params):
 def OffsetTransform(params, ndims, offset_a, offset_b, offset_c):
     off1 = offset_b
     off2 = offset_a
-    ot = 0 #offset_c * channels(ndims, params)
-    off3 = offset_c * channels(ndims, params)
+    off3 = offset_a
+    ot = 0 
+    
     start = True
     for i in range(ndims - 1, -1, -1):
         index_a = off1 % out(ndims+i, ndims, params)
         index_b = off2 % out(i, ndims, params)
         off1 = math.floor(off1 / out(ndims+i, ndims, params))
         off2 = math.floor(off2 / out(i, ndims, params))
+        off3 = off3 // ksize(i, params)
 
         offset = index_a * stride(i, ndims, params) + \
             index_b * dilation(i, ndims, params) - padding(i, ndims, params)
@@ -91,7 +94,7 @@ def OffsetTransform(params, ndims, offset_a, offset_b, offset_c):
             start = False
         else:
             ot += offset * input(i, ndims, params)
-    return ot
+    return ot + off3 * channels(ndims, params) 
  
 
 
@@ -102,17 +105,14 @@ def ncol(params, ndims, x, y):
 
     X = x.ravel()
     Y = y.ravel()
-
-    for c in range(channel):
+    for i in range(channel * dim1):
         for j in range(dim2):
-            for i in range(dim1):
-                out_offset = dim2 * (c * dim2 + i) + j
-                in_offset = OffsetTransform(params, ndims, i, j, c)
-                if in_offset == -1:
-                    Y[out_offset] = 0
-                else:
-
-                    Y[out_offset] = X[in_offset]
+            out_offset = i * dim2 +  j
+            in_offset = OffsetTransform(params, ndims, i, j, 0)
+            if in_offset == -1:
+                Y[out_offset] = 0
+            else:
+                Y[out_offset] = X[in_offset]
 
     y = Y.reshape(y.shape)
     return y
@@ -146,9 +146,10 @@ def params(ndims, ksize, stride, padding, dilation):
     return ret(ksize) + ret(stride) + ret(padding) + ret(dilation)
 
 def index_strides(shape):
-    stride = [1 for _ in range(len(shape))]
-    for i in range(1, len(shape)):
-        stride[i] = stride[i-1] * shape[i-1]
+    stride = [1 for _ in range(len(shape)+1)]
+
+    for i in range(len(stride)-1, 0, -1):
+        stride[i-1] = stride[i] * shape[i-1]
     return stride
 
 default_params = dict(ksize=2, stride=1, padding=0, dilation=1)
@@ -160,25 +161,24 @@ def test2d(x):
         _injest_dim = 1
     
     in_shape = list(x.shape)[_injest_dim:]
+    in_strides = index_strides(x.shape)
     ndims = len(x.shape)-_injest_dim
     
     _params = params(ndims, **default_params) + [_injest_dim] + list(x.shape)
     out_shape = [ksize(dim, _params) for dim in range(ndims)] + [output(dim, ndims, _params) for dim in range(ndims)]
     _params += out_shape
 
-    
+
     out_dims =  [channels(ndims, _params)] + [math.prod(out_shape[:ndims]), math.prod(out_shape[ndims:])]
     
     y1 = np.zeros(out_dims)
     x1 = np.zeros_like(x)
-    x1_s = index_strides(x.shape)
 
     y2 = ncol(_params, len(in_shape), x, y1)  
-    print(y2)
-    y = coln(_params, len(in_shape), y2, x1)
-    print('\n')
-    print(y)
-    return y
+    
+    # y = coln(_params, len(in_shape), y2, x1)
+
+    return y2
 
 x1 = np.arange(0, 9).astype(np.float32)
 x2 = np.arange(0, 18).reshape((1,2,3,3)).astype(np.float32)

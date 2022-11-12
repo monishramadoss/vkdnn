@@ -101,7 +101,8 @@ int main()
 	};
 	tensor oupt = tensor::zeros<float>({2, 8, 4});
 	tensor param_tensor = tensor({ static_cast<uint32_t>(params.size()) });
-	//unfold<2>(inpt, oupt, param_tensor);
+	
+	unfold<2>(inpt, oupt, param_tensor);
 	
 	return 0;
 }
