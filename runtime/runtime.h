@@ -161,6 +161,10 @@ public:
 			for (uint32_t i = 0; i < device_count_; ++i)
 				devices_[i] = new device(i, device_count_, instance_, physical_devices_[i]);
 		}
+		if(result != VK_SUCCESS)
+			throw std::runtime_error("cannot allocate devices\n");
+
+
 		return *this;
 	}
 	runtime() {  create(); }

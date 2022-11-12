@@ -1,3 +1,6 @@
+#include <stdlib.h>
+
+
 struct offset
 {
 	size_t upper;
