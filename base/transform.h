@@ -73,7 +73,6 @@ void unfold(tensor& t1, tensor& t2, tensor& param_tensor)
     }
     std::string kernel_code = folding_kernel_code;
     kernel_code += "uint ndims = " + std::to_string(ndims) + ";\n";
-
     kernel_code = unfold_kernel_code(kernel_code, t1, t2, param_tensor);
 
     std::cout << kernel_code << '\n';

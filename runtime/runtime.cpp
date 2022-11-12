@@ -26,7 +26,7 @@ runtime* init()
 #ifdef __linux__
 #define MEMCPY memcpy
 #elif _WIN32
-#define MEMCPY MEMCPY
+#define MEMCPY std::memcpy
 #else
 
 #endif

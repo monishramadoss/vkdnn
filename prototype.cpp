@@ -100,8 +100,12 @@ int main()
 		2, 8, 4		// output shape
 	};
 	tensor oupt = tensor::zeros<float>({2, 8, 4});
-	tensor param_tensor = tensor({ static_cast<uint32_t>(params.size()) });
-	//unfold<2>(inpt, oupt, param_tensor);
+	auto param_tensor = tensor({ static_cast<uint32_t>(params.size()) });
+	auto* blk = param_tensor.get_host_data();
+	memcpy(blk->ptr, params.data(), sizeof uint32_t * params.size());
+	param_tensor.sync();
+
+	unfold<2>(inpt, oupt, param_tensor);
 	
 	return 0;
 }
