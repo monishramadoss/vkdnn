@@ -24,7 +24,7 @@ public:
 	view(uint32_t* shape, uint32_t dims, char data_size);
 
 	~view();
-	view(const view&v);
+	view(const view& v);
 	view(view&& v) noexcept;
 	view& operator=(view&& v) noexcept;
 	[[nodiscard]] uint32_t ndims() const;
@@ -32,8 +32,7 @@ public:
 	[[nodiscard]] uint32_t shape(uint32_t idx = 0) const;
 	[[nodiscard]] size_t bytes_length() const;
 	[[nodiscard]] size_t count(uint32_t start_axis = 0) const;
-	[[nodiscard]] size_t count(const uint32_t start_axis, uint32_t end_axis=-1) const;
+	[[nodiscard]] size_t count(uint32_t start_axis, uint32_t end_axis = -1) const;
 	view index(uint32_t idx, int dim);
 	view reshape(const uint32_t* shape, uint32_t dims);
-
 };

@@ -50,19 +50,38 @@ void transpose(const std::vector<size_t>& axes, const tensor& t1, const tensor& 
 }
 
 
+struct folding_params
+{
+    uint32_t batch_size;
+    uint32_t channel_size;
+    uint32_t output_size;
+    uint32_t kernel_size;
+    uint32_t batch_stride;
+    uint32_t channel_stride;
+};  
+
 inline std::string folding_kernel_code = R"(
 layout(push_constant) uniform pushBlock {
     uint batch_size;
     uint channel_size;
     uint output_size;
     uint kernel_size;
+    uint batch_stride;
+    uint channel_stride;
 };
 
 layout(local_size_x = 256, local_size_y = 4, local_size_z = 1) in;
 )";
 
+inline uint32_t set_group_size_x(folding_params p)
+{
+    return align_size(p.batch_size * p.output_size, 256) / 256;
+}
 
-
+inline uint32_t set_group_size_y(folding_params p)
+{
+    return align_size(p.channel_size * p.kernel_size, 4) / 4;
+}
 
 template<uint32_t ndims>
 void unfold(tensor& t1, tensor& t2, tensor& param_tensor)
@@ -74,13 +93,23 @@ void unfold(tensor& t1, tensor& t2, tensor& param_tensor)
     std::string kernel_code = folding_kernel_code;
     kernel_code += "uint ndims = " + std::to_string(ndims) + ";\n";
     kernel_code = unfold_kernel_code(kernel_code, t1, t2, param_tensor);
-
-    std::cout << kernel_code << '\n';
+    const folding_params p = {
+        .batch_size = t1.get_shape(0),
+        .channel_size = t1.get_shape(1),
+        .output_size = static_cast<uint32_t>(t2.get_size(2)),
+        .kernel_size = t2.get_shape(1),
+        .batch_stride = static_cast<uint32_t>(t1.get_size(0)),
+        .channel_stride = static_cast<uint32_t>(t1.get_size(2)),
+    };
+    k_runtime->make_job<folding_params>("unfold", kernel_code, { t1.get_data(), t2.get_data(), param_tensor.get_data() },
+        p, set_group_size_x(p), set_group_size_y(p));
+    
 }
 
 template<uint32_t ndims>
 void fold(tensor& t1, tensor& t2, tensor& param_tensor)
 {
+    std::string kernel_code = folding_kernel_code;
     std::string kernel_code = folding_kernel_code;
     kernel_code += "uint ndims = " + std::to_string(ndims) + ";\n";
 }

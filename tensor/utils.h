@@ -170,21 +170,6 @@ inline std::string transpose_kernel_code(const std::string& kernel_shader_code, 
     std::string local_shader = kernel_shader_code;
     const std::string* shader_tensor = parameter_shader_code(local_shader, pt, t1, t2);
 
-// 	local_shader += R"(
-// void main() {
-// for (uint i = gl_GlobalInvocationID.x; i < total; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x)
-// {
-// 	uint old_pos = 0;
-// 	uint new_pos = i;
-// 	for(uint j = 0; j < ndims; ++j)
-// 	{
-// 		uint order = )" + shader_tensor[0] + "[j];\n\t\t" +
-// 		"old_pos += (new_pos / " + shader_tensor[0] + "[ndims + j]) * " + shader_tensor[0] + "[ndims * 2 + order];\n\t\t" +
-// 		"new_pos %= " + shader_tensor[0] + "[ndims + j];\n\t\t\n\t" +
-// 		"}\n\t" +
-// 		shader_tensor[2] + "[i] = " + shader_tensor[1] + "[abs(old_pos)];\n\t" +
-// 		"}\n}";
-
 local_shader += Format(R"(
 void main() {
     for(uint i = gl_GlobalInvocationID.x; i < total; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x){
@@ -209,17 +194,63 @@ inline std::string unfold_kernel_code(const std::string& kernel_shader_code, con
 {
     std::string local_shader = kernel_shader_code;
     const std::string* shader_tensor = parameter_shader_code(local_shader, pt, t1, t2);
+
+    //return local_shader;
+
     local_shader += R"(
+
+#define ksize(x) tensor_2[x]
+#define stride(x) tensor_2[ndims + x]
+#define padding(x) tensor_2[ndims*2 + x]
+#define dilation(x) tensor_2[ndims*3 + x]
+#define input(x) tensor_2[ndims*4 + x]
+#define output(x) tensor_2[ndims*5 + x]
+
+uint offsetEngine(uint offset_a, uint offset_b){
+    uint i1 = offset_b % output(2*ndims - 1);
+    uint i2 = offset_a % output(ndims-1);
+    
+    uint o1 = uint(offset_b / output(2*ndims - 1));
+    uint o2 = uint(offset_a / output(ndims-1));
+    uint o3 = uint(offset_a / ksize(ndims-1));
+       
+
+    uint o = i1 * stride(ndims-1) + i2 * dilation(ndims-1) - padding(ndims-1);
+    
+    for(uint k = ndims-1; k > 0; --k){
+        i1 = o1 % output(ndims + k - 1);
+        i2 = o2 % output(k - 1);
+        
+        o1 = uint(o1 / output(ndims + k - 1));
+        o2 = uint(o2 / output(k - 1));
+        o3 = uint(o3 / ksize(k - 1));
+        o += (i1 * stride(k - 1) + i2 * dilation(k - 1) - padding(k - 1)) * input(k - 1);
+
+    }
+    return o + o3 * channel_stride;
+ }
+
+
 void main() {
-    for(uint i = gl_GlobalInvocationID.x; i < output_size; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x){
-        for(uint j = gl_GlobalInvocationID.y; j < kernel_size; j += gl_NumWorkGroups.y * gl_WorkGroupSize.y){
-               
+   
+    uint out_offset = 0;
+    uint in_offset = 0;
+    uint offset = 0;
+    uint ob = output_size * batch_size;
+    uint kc = kernel_size * channel_size;
+
+
+    for(uint i = gl_GlobalInvocationID.x; i < ob; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x){
+        for(uint j = gl_GlobalInvocationID.y; j < kc; j += gl_NumWorkGroups.y * gl_WorkGroupSize.y){
+            in_offset  = offsetEngine(j, i);           
+            out_offset = j * ob + i;
+            tensor_1[out_offset] = tensor_0[in_offset];
         }
     }
 }
-)";
 
-    
+
+)";
 
     return local_shader;
 }

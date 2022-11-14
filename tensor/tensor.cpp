@@ -99,11 +99,12 @@ view::view(view&& v) noexcept : n_dims_(v.n_dims_), data_size_(v.data_size_), sh
                                 size_(new size_t[n_dims_ + 1]), stride_(new size_t[n_dims_]),
                                 n_offsets_(v.n_offsets_), offset_(new offset*[n_offsets_])
 {
-	std::memcpy(shape_, v.shape_, sizeof v.shape_);
-	std::memcpy(stride_, v.stride_, sizeof v.stride_);
+
+	std::memcpy(shape_, v.shape_, n_dims_ * sizeof uint32_t);
+	std::memcpy(stride_, v.stride_, n_dims_ * sizeof size_t);
 	if (n_offsets_ != 0)
-		std::memcpy(offset_, v.offset_, sizeof v.offset_);
-	std::memcpy(size_, v.size_, sizeof v.size_);
+		std::memcpy(offset_, v.offset_, n_offsets_ * sizeof(offset*));
+	std::memcpy(size_, v.size_, (n_dims_ + 1) * sizeof size_t);
 }
 
 view& view::operator=(view&& v) noexcept
@@ -118,11 +119,11 @@ view& view::operator=(view&& v) noexcept
 		n_offsets_ = v.n_offsets_;
 		offset_ = new offset*[n_offsets_];
 
-		std::memcpy(shape_, v.shape_, sizeof v.shape_);
-		std::memcpy(stride_, v.stride_, sizeof v.stride_);
+		std::memcpy(shape_, v.shape_, n_dims_ * sizeof uint32_t);
+		std::memcpy(stride_, v.stride_, n_dims_ * sizeof size_t);
 		if (n_offsets_ != 0)
-			std::memcpy(offset_, v.offset_, sizeof v.offset_);
-		std::memcpy(size_, v.size_, sizeof v.size_);
+			std::memcpy(offset_, v.offset_, n_offsets_ * sizeof(offset*));
+		std::memcpy(size_, v.size_, (n_dims_ + 1) * sizeof size_t);
 	}
 	return *this;
 }
@@ -190,7 +191,7 @@ view view::index(const uint32_t idx, int dim)
 	for (uint32_t i = 0; i < upper_split_size; ++i)
 		offset_[n_offsets_][i] = {off + i * lower_split_size, split_stride};
 	++n_offsets_;
-	return {dst_shape, n_dims_, data_size_};
+	return view(dst_shape, n_dims_, data_size_);
 }
 
 view view::reshape(const uint32_t* shape, uint32_t dims)
@@ -200,7 +201,7 @@ view view::reshape(const uint32_t* shape, uint32_t dims)
 		acc *= shape[i];
 	if (acc != size_[0])
 		throw std::runtime_error("shape error");
-	return {shape, dims, data_size_};
+	return view(shape, dims, data_size_);
 }
 
 

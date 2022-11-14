@@ -170,7 +170,7 @@ public:
 	runtime() {  create(); }
 	~runtime() { cleanup(); }
 
-	[[nodiscard]] device& get_device(const uint32_t idx = 0) const { return *devices_[idx]; }
+	[[nodiscard]] device& get_device(const uint32_t idx) const { return *devices_[idx]; }
 
 	[[nodiscard]] vk_block * malloc(const size_t size, const bool host) const
 	{
@@ -196,7 +196,8 @@ public:
 		job_queue_.push_back(j);
 	}
 
-	void wait() {
+	void wait() const
+	{
 		for (uint32_t i = 0; i < device_count_; ++i)
 			devices_[i]->wait();
 	}

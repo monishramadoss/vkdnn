@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <string>
 #include <vulkan/vulkan.h>
 
 #include "allocator.h"

@@ -7,7 +7,7 @@ project ("vulkan_dnn")
 
 # Add source to this project's executable.
 
-add_executable (vulkan_dnn "prototype.cpp" "vulkan_dnn.h")
+add_executable (vulkan_dnn "prototype.cpp" "vulkan_dnn.h" "prototype.cpp")
 set_property(TARGET vulkan_dnn PROPERTY CXX_STANDARD 20)
 target_compile_features(vulkan_dnn PRIVATE cxx_std_20)
 

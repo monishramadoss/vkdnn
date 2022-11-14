@@ -39,11 +39,11 @@ def darknet_img2col(data, channels, height, width, ksize, stride, pad):
 
 
 
-x = np.arange(0, 9).astype(np.float32)
-x2 = np.arange(0, 18).astype(np.float32)
-out = darknet_img2col(x2, channels=2, height=3, width=3, ksize=2, stride=1, pad=0)
-print(out)
-print()
+# x = np.arange(0, 9).astype(np.float32)
+# x2 = np.arange(0, 18).astype(np.float32)
+# out = darknet_img2col(x2, channels=2, height=3, width=3, ksize=2, stride=1, pad=0)
+# print(out)
+# print()
 
 
 
@@ -56,37 +56,56 @@ def padding(dim, ndims, params):
 def dilation(dim, ndims, params):
     return params[ndims*3 + dim]
 def input(dim, ndims, params):
-    _cb = params[ndims*4]
-    return params[ndims*4 + dim + _cb+1]
+    return params[ndims*4 + dim]
 def out(dim, ndims, params):
-    _cb = params[ndims*4]
-    return params[ndims*5 + dim + _cb+1]
-
+    return params[ndims*5 + dim]
 def channels(ndims, params):
-    _cb = params[ndims*4]
-    return params[ndims*4 + _cb]
-
+    return params[ndims*4 + 1]
 def output(dim, ndims, params):
-    return int((input(dim, ndims, params) + 2 * padding(dim, ndims, params) - dilation(dim, ndims, params) * (ksize(dim, params)-1) - 1) / stride(dim, ndims, params)) + 1
+    return int((input(dim+2, ndims, params) + 2 * padding(dim, ndims, params) - dilation(dim, ndims, params) * (ksize(dim, params)-1) - 1) / stride(dim, ndims, params)) + 1
     
 
 
-def OffsetTransform(params, ndims, offset_a, offset_b, offset_c):
+def OffsetTransform(params, ndims, offset_a, offset_b, ):
     off1 = offset_b
     off2 = offset_a
     off3 = offset_a
     ot = 0 
+    j = 1
     
+    i1 = offset_b % out(ndims-1 + ndims, ndims, params)
+    i2 = offset_a % out(ndims-1, ndims, params)
+
+    o1 = math.floor(offset_b / out(ndims-1 + ndims, ndims, params))
+    o2 = math.floor(offset_a / out(ndims-1, ndims, params))
+    o3 = math.floor(offset_a / ksize(ndims-1, params))
+
+    o = i1 * stride(ndims-1, ndims, params) + i2 * dilation(ndims-1, ndims, params) - padding(ndims-1, ndims, params)
+
+    for i in range(ndims-1, 0, -1):
+        
+        i1 = o1 % out(i-1 + ndims, ndims, params)
+        i2 = o2 % out(i-1, ndims, params)
+
+        o1 = math.floor(o1 / out(i-1 + ndims, ndims, params))
+        o2 = math.floor(o2 / out(i-1, ndims, params))
+        o3 = math.floor(o3 / ksize(i-1, params))
+
+        os =  i1 * stride(i-1, ndims, params) + i2 * dilation(i-1, ndims, params) - padding(i-1, ndims, params)
+        l = input(i-1, ndims, params)
+        o += os * input(i-1, ndims, params)
+
     start = True
     for i in range(ndims - 1, -1, -1):
+        j *= input(i, ndims, params)
+
         index_a = off1 % out(ndims+i, ndims, params)
         index_b = off2 % out(i, ndims, params)
         off1 = math.floor(off1 / out(ndims+i, ndims, params))
         off2 = math.floor(off2 / out(i, ndims, params))
-        off3 = off3 // ksize(i, params)
-
-        offset = index_a * stride(i, ndims, params) + \
-            index_b * dilation(i, ndims, params) - padding(i, ndims, params)
+        off3 = off3 // ksize(i, params) 
+        
+        offset = index_a * stride(i, ndims, params) + index_b * dilation(i, ndims, params) - padding(i, ndims, params)
         if offset < 0 or offset >= input(i, ndims, params):
             return -1
         if start:
@@ -94,7 +113,10 @@ def OffsetTransform(params, ndims, offset_a, offset_b, offset_c):
             start = False
         else:
             ot += offset * input(i, ndims, params)
-    return ot + off3 * channels(ndims, params) 
+
+    o = o +  o3 * j
+    return o
+    return ot + off3 * j
  
 
 
@@ -105,10 +127,10 @@ def ncol(params, ndims, x, y):
 
     X = x.ravel()
     Y = y.ravel()
-    for i in range(channel * dim1):
-        for j in range(dim2):
+    for i in range(channel * dim1): # kc
+        for j in range(dim2): # ob
             out_offset = i * dim2 +  j
-            in_offset = OffsetTransform(params, ndims, i, j, 0)
+            in_offset = OffsetTransform(params, ndims, i, j)
             if in_offset == -1:
                 Y[out_offset] = 0
             else:
@@ -126,13 +148,12 @@ def coln(params, ndims, x, y):
     Y = y.ravel()
 
 
-    for c in range(channel):
-        for i in range(dim1):
-            for j in range(dim2):
-                in_offset = dim2 * (c * dim1 + i) + j
-                out_offset = OffsetTransform(params, ndims, i, j, c)
-                Y[out_offset] += X[in_offset]
-        
+    for i in range(dim1 * channel):
+        for j in range(dim2):
+            in_offset = dim1 * i + j
+            out_offset = OffsetTransform(params, ndims, i, j)
+            Y[out_offset] += X[in_offset]
+    
     y = Y.reshape(y.shape)
     return y
 
@@ -145,13 +166,6 @@ def params(ndims, ksize, stride, padding, dilation):
             return v
     return ret(ksize) + ret(stride) + ret(padding) + ret(dilation)
 
-def index_strides(shape):
-    stride = [1 for _ in range(len(shape)+1)]
-
-    for i in range(len(stride)-1, 0, -1):
-        stride[i-1] = stride[i] * shape[i-1]
-    return stride
-
 default_params = dict(ksize=2, stride=1, padding=0, dilation=1)
 
 def test2d(x):
@@ -161,20 +175,24 @@ def test2d(x):
         _injest_dim = 1
     
     in_shape = list(x.shape)[_injest_dim:]
-    in_strides = index_strides(x.shape)
     ndims = len(x.shape)-_injest_dim
     
-    _params = params(ndims, **default_params) + [_injest_dim] + list(x.shape)
+    _params = params(ndims, **default_params) + list(x.shape)
     out_shape = [ksize(dim, _params) for dim in range(ndims)] + [output(dim, ndims, _params) for dim in range(ndims)]
     _params += out_shape
 
-
+    print(out_shape)
+    print(_params)
+	
     out_dims =  [channels(ndims, _params)] + [math.prod(out_shape[:ndims]), math.prod(out_shape[ndims:])]
     
     y1 = np.zeros(out_dims)
     x1 = np.zeros_like(x)
 
     y2 = ncol(_params, len(in_shape), x, y1)  
+
+
+
     
     # y = coln(_params, len(in_shape), y2, x1)
 

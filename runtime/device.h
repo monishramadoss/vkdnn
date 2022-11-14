@@ -112,7 +112,9 @@ public:
 		max_work_group_size_[2] = limits_.maxComputeWorkGroupSize[2];
 		max_subgroup_size_ = subgroup_properites_.subgroupSize;
 		device_name = device_properties_.properties.deviceName;
-		std::cout << "device subgroup_size " << max_subgroup_size_ << "\n";
+		//std::cout << "device subgroup_size " << max_subgroup_size_ << "\n";
+
+
 		uint32_t queue_family_count = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &queue_family_count, nullptr);
 		queue_families_.resize(queue_family_count);

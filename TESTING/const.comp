@@ -1,14 +1,72 @@
 #version 460
+#extension GL_EXT_shader_explicit_arithmetic_types_int32: enable
 #extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable
- 
+
 layout(push_constant) uniform pushBlock {
-         uint total;
+    uint batch_size;
+    uint channel_size;
+    uint output_size;
+    uint kernel_size;
+    uint batch_stride;
+    uint channel_stride;
 };
-layout(local_size_x=1024, local_size_y=1, local_size_z=1) in;
+
+layout(local_size_x = 256, local_size_y = 4, local_size_z = 1) in;
+uint ndims = 2;
 layout(binding=0) buffer buf_0 { float tensor_0[]; };
+layout(binding=1) buffer buf_1 { float tensor_1[]; };
+layout(binding=2) buffer buf_2 { uint32_t tensor_2[]; };
+
+
+#define ksize(x) tensor_2[x]
+#define stride(x) tensor_2[ndims + x]
+#define padding(x) tensor_2[ndims*2 + x]
+#define dilation(x) tensor_2[ndims*3 + x]
+#define input(x, cb) tensor_2[ndims*4 + x]
+#define output(x, cb) tensor_2[ndims*5 + x]
+
+uint offsetEngine(uint offset_a, uint offset_b, uint cb){
+    uint i1 = offset_a % output(ndims*2-1, cb);
+    uint i2 = offset_b % output(ndims-1, cb);
+
+    uint o1 = uint(offset_a / output(ndims*2-1, cb));
+    uint o2 = uint(offset_b / output(ndims-1, cb));
+    uint o3 = uint(offset_a / ksize(ndims-1));
+
+
+    uint o = i1 * stride(ndims-1) + i2 * dilation(ndims-1) - padding(ndims-1) ;
+
+    for(uint k = ndims-1; k > 0; --k){
+        i1 = o1 % output(ndims + k - 1, cb);
+        i2 = o2 % output(k - 1, cb);
+
+        o1 = uint(o1 / output(ndims + k - 1, cb));
+        o2 = uint(o2 / output(k - 1, cb));
+        o3 = uint(o3 / ksize(k - 1));
+        o += (i1 * stride(k - 1) + i2 * dilation(k - 1) - padding(k - 1)) * input(k - 1, cb);
+
+    }
+    return o + o3 * channel_stride;
+ }
+
 
 void main() {
-        for (uint i = gl_GlobalInvocationID.x; i < total; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x){
-                {}[i] = float(1.000000);
+    uint dim2 = 1;
+    uint _cb = params[ndims*4];
+
+
+    uint out_offset = 0;
+    uint in_offset = 0;
+    uint offset = 0;
+    uint dim1 = output_size * batch_size;
+    uint dim2 = kernel_size * channel_size;
+
+
+    for(uint i = gl_GlobalInvocationID.x; i < dim1; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x){
+        for(uint j = gl_GlobalInvocationID.y; j < dim2; j += gl_NumWorkGroups.y * gl_WorkGroupSize.y){
+            in_offset  = offsetEngine(i, j, _cb);
+            out_offset = i * dim2 + j;
+            tensor_1[out_offset] = tensor_0[in_offset];
         }
+    }
 }

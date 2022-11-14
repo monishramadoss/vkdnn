@@ -57,7 +57,7 @@ inline void true_div(const tensor& t1, const tensor& t2, const tensor& t3)
 inline void mod(const tensor& t1, const tensor& t2, const tensor& t3)
 {
 	const binary_parameter p{static_cast<uint32_t>(t1.get_size())};
-	const std::string kernel_code = binary_shader_code(binary_shader, "{}[i] = mod({0}[i], {1}[i]);", t1, t2, t3);
+	const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = mod({0}[i], {1}[i]);", t1, t2, t3);
 	k_runtime->make_job<binary_parameter>("mod", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
 	                                                  p, set_group_size(p));
 }

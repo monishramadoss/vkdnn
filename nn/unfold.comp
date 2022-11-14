@@ -67,7 +67,7 @@ bool unfoldOffsetTransform(uint a, uint b, uint offset)
 
 
 void main(){
-    
+        
     for (uint a = gl_GlobalInvocationID.x; a < output_total; a += gl_NumWorkGroups.x * gl_WorkGroupSize.x)
     {
         for (uint b = gl_GlobalInvocationID.y; b < kernel_total; b += gl_NumWorkGroups.y * gl_WorkGroupSize.y)
