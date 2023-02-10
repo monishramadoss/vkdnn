@@ -284,12 +284,11 @@ void main() {
     uint col = gl_GlobalInvocationID.x; // bx * gl_workGroupSize.x + thrX;
     uint row = gl_GlobalInvocationID.y; // by * gl_WorkGroupSize.y + thrY;
 
-
     uint m = out_channel;
     uint k = output_size;
     uint n = in_channel * kernel_size;
-    )" + tmp_type + R"( elementC = 0;
 
+    )" + tmp_type + R"( elementC = 0;
     for(uint t = 0; t < (n-1) / TILE_DIM + 1; ++t){
         if(row < m && t * TILE_DIM + thrX < n)
             ATile[thrY][thrX] =)" + shader_tensor[2] + R"([row*n + t*TILE_DIM+thrX];
@@ -309,6 +308,107 @@ void main() {
         )" + shader_tensor[3] + R"([row * k + col] = elementC;
 })";
 
+
+    return local_shader;
+}
+
+
+inline std::string inplace_pool_functions_kernel(const std::string &kernel_shader_code, std::string fn_string, const tensor &pt, const tensor &t1, const tensor &t2)
+{
+    std::string local_shader = kernel_shader_code;
+    std::string shader_tensor[3];
+
+
+    const int ext_int_0 = tensor_injection(local_shader, shader_tensor[0], 0, pt);
+    const int ext_int_1 = tensor_injection(local_shader, shader_tensor[1], 1, t1);
+    const int ext_int_2 = tensor_injection(local_shader, shader_tensor[2], 2, t2);    
+
+    if (ext_int_0 == ext_int_1)
+        local_shader = shader_extensions[ext_int_0] + local_shader;
+
+    if (ext_int_1 == ext_int_2) {
+        local_shader = shader_extensions[ext_int_1] + local_shader;
+    }
+    else
+    {
+        local_shader = shader_extensions[ext_int_0] + local_shader;
+        local_shader = shader_extensions[ext_int_1] + local_shader;
+        local_shader = shader_extensions[ext_int_2] + local_shader;
+    }
+
+    local_shader += "#define k(x) " + shader_tensor[0] + "[x]\n";
+    local_shader += "#define s(x) " + shader_tensor[0] + "[x + NDIMS]\n";
+    local_shader += "#define p(x) " + shader_tensor[0] + "[x + NDIMS*2]\n";
+    local_shader += "#define d(x) " + shader_tensor[0] + "[x + NDIMS*3]\n";
+    local_shader += "#define i(x) " + shader_tensor[0] + "[x + NDIMS*4]\n";
+    local_shader += "#define o(x) " + shader_tensor[0] + "[x + NDIMS*5]\n";
+    local_shader = SHADER_VERSION + local_shader;
+    
+    std::string tmp_type;
+    gen_type(t1.get_type(), tmp_type);
+
+    local_shader +=  R"(
+shared )" + tmp_type + R"( ATile[TILE_DIM];
+
+int offset_engine(uint offset_a, uint offset_b)
+{   
+    uint idx = NDIMS - 1 + 2;
+    uint idx2 = idx - 2;
+    uint index_a = offset_b % o(NDIMS + idx);
+    uint index_b = offset_a % o(idx);
+    uint o1 = offset_b / o(NDIMS + idx);
+    uint o2 = offset_a / o(idx);
+    uint o3 = offset_a / k(idx2);
+    
+    uint ot = index_a * s(idx2) + index_b * d(idx2) - p(idx2); 
+
+    for(idx = idx-1; idx > 1; --idx){
+        idx2 = idx - 2;
+        index_a = o1 % o(NDIMS + idx);
+        index_b = o2 % o(idx);
+        uint offset = index_a * s(idx2) + index_b * d(idx2) - p(idx2);
+        ot += offset * i(idx);
+        if(offset >= i(idx))
+            return -1;
+        o1 = o1 / o(NDIMS + idx);
+        o2 = o2 / o(idx);
+        o3 = o3 / k(idx2);
+    }
+
+    return int(ot + o3 * input_size);
+}
+
+void main(){
+    uint kernel_size = 1;
+    for(uint i = 0; i < NDIMS; ++i)
+        kernel_size *= k(i);
+
+    uint bx = gl_WorkGroupID.x; 
+    
+    uint thrX = gl_LocalInvocationID.x;
+
+    uint col = gl_GlobalInvocationID.x; // bx * gl_workGroupSize.x + thrX;
+    
+    uint k = output_size;
+    uint n = in_channel * kernel_size;
+
+    )" + tmp_type + R"( elementC = 0;
+    for(uint t = 0; t < (n-1) / TILE_DIM + 1; ++t){
+        int in_offset = offset_engine(t*TILE_DIM+thrX, col);
+        if (t*TILE_DIM+thrX < n && col < k && in_offset != -1)
+            ATile[thrX] = )" + shader_tensor[1] + R"([in_offset];
+        else
+            ATile[thrX] = 0.0f;
+        barrier();
+        for(int tt = 0; tt < TILE_DIM; ++tt)
+            elementC = )" + Format(fn_string, "ATile[tt]", "elementC")  + R"(
+        barrier();
+    }
+    if(col < k)
+        )" + shader_tensor[2] + R"([col] = elementC;
+
+
+})";
 
     return local_shader;
 }

@@ -42,7 +42,7 @@ inline uint32_t set_group_size_y(const conv_param& p)
 
 template <uint32_t ndims>
 void convND(tensor& param, tensor& x, tensor& w, tensor& y) { // todo add batching stuff to run multiple kernels
-    const conv_param p {x.get_shape(0), w.get_shape(0), w.get_shape(1), (uint32_t)x.get_size(2), (uint32_t)w.get_size(2), (uint32_t)y.get_size() };
+    const conv_param p {x.get_shape(0), w.get_shape(0), w.get_shape(1), (uint32_t)x.get_size(2), (uint32_t)w.get_size(2), (uint32_t)y.get_size(2) };
     std::string kernel_code = "#define TILE_DIM " + std::to_string(TILE_DIM) + "\n#define NDIMS " + std::to_string(ndims) + "\n" + conv_kernel_code;
     kernel_code = inplace_unfold_functions_kernel(kernel_code, "fma(%s, %s, %s);", param, x, w, y);
     k_runtime->make_job<conv_param>("convNd", kernel_code, {param.get_data(), x.get_data(), w.get_data(), y.get_data()}, p,
@@ -51,7 +51,7 @@ void convND(tensor& param, tensor& x, tensor& w, tensor& y) { // todo add batchi
 
 template<uint32_t ndims>
 void deconvND(tensor& param, tensor& x, tensor& w, tensor& y) {
-    const conv_param p{x.get_shape(0), w.get_shape(0), w.get_shape(1), (uint32_t)x.get_size(2), (uint32_t)w.get_size(2), (uint32_t)y.get_size()} ;
+    const conv_param p{x.get_shape(0), w.get_shape(0), w.get_shape(1), (uint32_t)x.get_size(2), (uint32_t)w.get_size(2), (uint32_t)y.get_size(2)} ;
     std::string kernel_code = "#define TILE_DIM " + std::to_string(TILE_DIM) + "\n#define NDIMS " + std::to_string(ndims) + "\n" + conv_kernel_code;
     kernel_code = inplace_unfold_functions_kernel(kernel_code, "%s / %s + %s;", param, x, w, y);
     k_runtime->make_job<conv_param>("convNd", kernel_code, {param.get_data(), x.get_data(), w.get_data(), y.get_data()}, p,
