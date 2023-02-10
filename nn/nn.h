@@ -2,3 +2,4 @@
 
 #pragma once
 #include "../runtime/runtime.h"
+#include "convolution.h"

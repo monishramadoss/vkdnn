@@ -1,0 +1,261 @@
+[compute shader]
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_int32: enable
+#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable
+#extension GL_EXT_debug_printf : enable
+
+
+#define NDIMS 2
+#define TILE_DIM 16
+#define BATCH_DIM 2
+
+layout(local_size_x = TILE_DIM, local_size_y = TILE_DIM, local_size_z = BATCH_DIM) in;
+
+layout(push_constant) uniform pushBlock {
+    uint batch_size;
+    uint in_channel;
+    uint out_channel;
+    uint input_size;
+    uint kernel_size;
+    uint output_size;
+};
+
+
+layout(binding = 0) buffer blockp {
+    uint params[];
+};
+
+layout(binding = 1) buffer blocka {
+    float ip[];
+};
+
+layout(binding = 2) buffer blockb {
+    float wt[];
+};
+
+layout(binding = 3) buffer blockc {
+    float ot[];
+};
+
+#define k(x) params[x]
+#define s(x) params[NDIMS + x]
+#define p(x) params[NDIMS*2 + x]
+#define d(x) params[NDIMS*3 + x]
+#define i(x) params[NDIMS*4 + x]
+#define o(x) params[NDIMS*5 + x]
+
+
+int offset_engine(uint offset_a, uint offset_b)
+{   
+    uint idx = NDIMS - 1 + 2;
+    uint idx2 = idx - 2;
+    uint index_a = offset_b % o(NDIMS + idx);
+    uint index_b = offset_a % o(idx);
+    uint o1 = offset_b / o(NDIMS + idx);
+    uint o2 = offset_a / o(idx);
+    uint o3 = offset_a / k(idx2);
+    
+    uint ot = index_a * s(idx2) + index_b * d(idx2) - p(idx2); 
+
+    for(idx = idx-1; idx > 1; --idx){
+        idx2 = idx - 2;
+        index_a = o1 % o(NDIMS + idx);
+        index_b = o2 % o(idx);
+        uint offset = index_a * s(idx2) + index_b * d(idx2) - p(idx2);
+        ot += offset * i(idx);
+        if(offset >= i(idx))
+            return -1;
+        o1 = o1 / o(NDIMS + idx);
+        o2 = o2 / o(idx);
+        o3 = o3 / k(idx2);
+    }
+
+    return int(ot + o3 * input_size);
+}
+
+
+shared float ATile[TILE_DIM][TILE_DIM];
+shared float BTile[TILE_DIM][TILE_DIM][BATCH_DIM];
+
+void main()
+{
+
+    uint bx = gl_WorkGroupID.x; 
+    uint by = gl_WorkGroupID.y;
+    uint bz = gl_WorkGroupID.z;
+
+    uint thrX = gl_LocalInvocationID.x;
+    uint thrY = gl_LocalInvocationID.y;
+    uint thrZ = gl_LocalInvocationID.z;
+
+    uint col = gl_GlobalInvocationID.x; // bx * gl_workGroupSize.x + thrX;
+    uint row = gl_GlobalInvocationID.y; // by * gl_WorkGroupSize.y + thrY;
+    uint batch = gl_GlobalInvocationID.z;
+    
+    if(batch_size <= batch){
+       // debugPrintfEXT("My idx is %u", batch);
+       // return;
+    }
+
+    uint m = out_channel;
+    uint k = output_size;
+    uint n = in_channel * kernel_size;
+    float elementC = 0;
+    uint b = batch;
+
+    for (uint t = 0; t < (n-1)/TILE_DIM+1; ++t){
+        //threads to load matrix A to shared memory
+        if(row < m && t*TILE_DIM+thrX < n)
+            ATile[thrY][thrX] = wt[row*n + t*TILE_DIM+thrX];
+        else
+            ATile[thrY][thrX] = 0.0f;
+        
+        int in_offset = offset_engine(t*TILE_DIM+thrY, col);
+        if (t*TILE_DIM+thrY < n && col < k && in_offset != -1) {
+            BTile[thrY][thrX][b] = ip[b * input_size + in_offset];
+        }
+        else
+            BTile[thrY][thrX][b] = 0.0f;
+
+        barrier();
+        for (int i = 0; i < TILE_DIM; ++i)
+            elementC += ATile[thrY][i] * BTile[i][thrX][b];
+        barrier();
+    }
+    if (row < m && col < k)
+        ot[b*out_channel * output_size + row*k+col] = elementC;
+
+
+}
+
+
+[test]
+
+push uint 0 1
+push uint 4 2
+push uint 8 4
+push uint 12 9
+push uint 16 4
+push uint 20 4
+
+# 1 2 3 3
+# 18 * 4
+# ssbo 1 72 
+
+ssbo 1 subdata float 0 0
+ssbo 1 subdata float 4 1
+ssbo 1 subdata float 8 2
+ssbo 1 subdata float 12 3
+ssbo 1 subdata float 16 4
+ssbo 1 subdata float 20 5
+ssbo 1 subdata float 24 6
+ssbo 1 subdata float 28 7
+ssbo 1 subdata float 32 8
+ssbo 1 subdata float 36 9
+ssbo 1 subdata float 40 10
+ssbo 1 subdata float 44 11
+ssbo 1 subdata float 48 12
+ssbo 1 subdata float 52 13
+ssbo 1 subdata float 56 14
+ssbo 1 subdata float 60 15
+ssbo 1 subdata float 64 16
+ssbo 1 subdata float 68 17
+
+
+# 4 2 2 2
+# 32 * 4
+# ssbo 2 128 
+
+ssbo 2 subdata float 0 1
+ssbo 2 subdata float 4 1
+ssbo 2 subdata float 8 1
+ssbo 2 subdata float 12 1
+ssbo 2 subdata float 16 1
+ssbo 2 subdata float 20 1
+ssbo 2 subdata float 24 1
+ssbo 2 subdata float 28 1
+ssbo 2 subdata float 32 1
+ssbo 2 subdata float 36 1
+ssbo 2 subdata float 40 1
+ssbo 2 subdata float 44 1
+ssbo 2 subdata float 48 1
+ssbo 2 subdata float 52 1
+ssbo 2 subdata float 56 1
+ssbo 2 subdata float 60 1
+ssbo 2 subdata float 64 1
+ssbo 2 subdata float 68 1
+ssbo 2 subdata float 72 1
+ssbo 2 subdata float 76 1
+ssbo 2 subdata float 80 1
+ssbo 2 subdata float 84 1
+ssbo 2 subdata float 88 1
+ssbo 2 subdata float 92 1
+ssbo 2 subdata float 96 1
+ssbo 2 subdata float 100 1
+ssbo 2 subdata float 104 1
+ssbo 2 subdata float 108 1
+ssbo 2 subdata float 112 1
+ssbo 2 subdata float 116 1
+ssbo 2 subdata float 120 1
+ssbo 2 subdata float 124 1
+
+
+# 1 4 2 2 
+# 16 * 4
+ssbo 3 64 
+
+# ndims * 4 + 4 + 4
+# 16 * 4
+# ssbo 0 64  
+
+ssbo 0 subdata uint 0 2
+ssbo 0 subdata uint 4 2
+ssbo 0 subdata uint 8 1
+ssbo 0 subdata uint 12 1
+ssbo 0 subdata uint 16 0
+ssbo 0 subdata uint 20 0
+ssbo 0 subdata uint 24 1
+ssbo 0 subdata uint 28 1
+
+ssbo 0 subdata uint 32 1
+ssbo 0 subdata uint 36 2
+ssbo 0 subdata uint 40 3
+ssbo 0 subdata uint 44 3
+
+ssbo 0 subdata uint 48 2
+ssbo 0 subdata uint 52 2
+ssbo 0 subdata uint 56 2
+ssbo 0 subdata uint 60 2
+
+
+
+# Use the compute shader to fill each vec2 with its grid position
+compute 1 1 1
+
+
+# probe [52. 60. 76. 84. 52. 60. 76. 84. 52. 60. 76. 84. 52. 60. 76. 84.]
+
+probe ssbo uint 0 4 == 2
+probe ssbo float 1 4 == 1
+probe ssbo float 2 4 == 1
+
+
+# probe ssbo float 3 0 == 52
+# probe ssbo float 3 4 == 60
+# probe ssbo float 3 8 == 76
+# probe ssbo float 3 12 == 84
+# 
+# probe ssbo float 3 16 == 52
+# probe ssbo float 3 20 == 60
+# probe ssbo float 3 24 == 76
+# probe ssbo float 3 28 == 84
+# 
+# probe ssbo float 3 32 == 52
+# probe ssbo float 3 36 == 60
+# probe ssbo float 3 40 == 76
+# probe ssbo float 3 44 == 84
+# 
+# probe ssbo float 3 48 == 52
+# probe ssbo float 3 52 == 60
+# probe ssbo float 3 56 == 76
+# probe ssbo float 3 60 == 84

@@ -37,9 +37,9 @@ inline std::vector<uint32_t> compile(const std::string& shader_entry, const std:
 	i = fclose(tmp_file);
 #else
 	
-	
-	tmpnam(tmp_filename_in);
-	tmpnam(tmp_filename_out);
+
+	mkstemp(tmp_filename_in);
+	mkstemp(tmp_filename_out);
 
 	tmp_file = fopen(tmp_filename_in, "wb+");
 	int i = fputs(source.c_str(), tmp_file);
@@ -52,15 +52,17 @@ inline std::vector<uint32_t> compile(const std::string& shader_entry, const std:
 	if(i != 0)
 		throw std::runtime_error("Error loading or creating temp file");
 	
-	std::cout << source << "\n";
-	const auto cmd_str = std::string(
-		"glslangValidator -V --quiet --target-env vulkan1.2 " + std::string(tmp_filename_in) + " --entry-point " + shader_entry +
+	//std::cout << source << "\n";
+	
+    const auto cmd_str = std::string(
+		"glslangValidator -V --quiet --target-env vulkan1.3 " + std::string(tmp_filename_in) + " --entry-point " + shader_entry +
 		" --source-entrypoint main -S comp -o " + tmp_filename_out
 	);
 
-	if (system(cmd_str.c_str()))
-		throw std::runtime_error("Error running glslangValidator command");
-
+	if (system(cmd_str.c_str())){
+        std::cerr << source << std::endl;
+    	throw std::runtime_error("Error running glslangValidator command");
+    }
 	std::ifstream file_stream(tmp_filename_out, std::ios::binary);
 	buffer.insert(buffer.begin(), std::istreambuf_iterator<char>(file_stream), {});
 	return { reinterpret_cast<uint32_t*>(buffer.data()), reinterpret_cast<uint32_t*>(buffer.data() + buffer.size()) };

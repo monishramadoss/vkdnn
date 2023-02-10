@@ -85,25 +85,25 @@ void main() {
     {
         //threads to load matrix A to shared memory
         if(row < m && t*TILE_DIM+thrX < n)
-            ATile[thrY][thrX] = tensor_0[row*n + t*TILE_DIM+thrX];
+            ATile[thrY][thrX] = )" + shader_tensor[0] + R"([row*n + t*TILE_DIM+thrX];
         else
             ATile[thrY][thrX] = 0.0f;
 
         //threads to load matrix B to shared memory
         if (t*TILE_DIM+thrY < n && col < k)
-            BTile[thrY][thrX] = tensor_1[(t*TILE_DIM+thrY)*k + col];
+            BTile[thrY][thrX] = )" + shader_tensor[1] + R"([(t*TILE_DIM+thrY)*k + col];
         else
             BTile[thrY][thrX] = 0.0f;
 
         barrier();
         //calculate a partial value of thread element in C
         for (int i = 0; i < TILE_DIM; ++i)
-            elementC += ATile[thrY][i] * BTile[i][thrX];
+            elementC = fma(ATile[thrY][i], BTile[i][thrX], elementC);
         barrier();
     }
     //copy final element value to the C matrix
     if (row < m && col < k)
-        tensor_2[row*k+col] = elementC;
+        )" + shader_tensor[2] + R"([row*k+col] = elementC;
 
 })";
 

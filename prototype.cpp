@@ -83,23 +83,25 @@ int main()
 
 	tensor inpt = arange_t(0.0f, 18.0f, 1.0f);
 	inpt.reshape({ 1, 2, 3, 3 });
-	//tensor::ones<float>({ 2,2,3,3 });
+	
+    tensor wght = tensor::ones<float>({ 2,4,2,2 });
 
 	std::vector<uint32_t> params = {
 		2, 2,		// kernel_size
 		1, 1,		// stride
 		0, 0,		// padding
 		1, 1,		// dilation	
-		3, 3,	// input shape
+		1, 2, 3, 3,	// input shape
 		2, 2, 2, 2		// output shape
 	};
-	tensor oupt = tensor::zeros<float>({ 2, 4, 4 });
+	tensor oupt = tensor::zeros<float>({1, 4, 4});
 	auto param_tensor = tensor({ static_cast<uint32_t>(params.size()) }, UINT);
 	auto* blk = param_tensor.get_host_data();
-	memcpy(blk->ptr, params.data(), sizeof uint32_t * params.size());
+	memcpy(blk->ptr, params.data(), sizeof(uint32_t) * params.size());
+
 	param_tensor.sync();
 
-	unfold<2>(inpt, oupt, param_tensor);
+	conv2d(param_tensor, inpt, wght, oupt);
 	oupt.sync(false);
 	inpt.sync(false);
 
