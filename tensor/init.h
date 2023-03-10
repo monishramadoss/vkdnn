@@ -36,8 +36,12 @@ inline uint32_t set_group_size(const fill_param& p)
 	return align_size(p.total, 1024) / 1024;
 }
 
-inline std::string fill_shader =
-	"layout(push_constant) uniform pushBlock {\n\t uint total;\n};\nlayout(local_size_x=1024, local_size_y=1, local_size_z=1) in;\n";
+inline std::string fill_shader = R"(
+layout(push_constant) uniform pushBlock {
+    uint total;
+};
+layout(local_size_x=1024, local_size_y=1, local_size_z=1) in;
+)";
 
 
 template <>

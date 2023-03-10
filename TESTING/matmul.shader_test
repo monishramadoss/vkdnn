@@ -1,0 +1,202 @@
+[compute shader]
+#version 460
+
+#define NUM_THREADS 128
+#define WARPSIZE 32
+
+#define BN 128
+#define BM 64
+#define BK 16
+
+#define WN 64
+#define WM 32
+#define TN 4
+#define TM 4
+
+#define WNINTER 1
+#define WMINTER (WM * WN) / (WARPSIZE * TM * TN * WNINTER)
+
+#define NUM_WARPS NUM_THREADS / WARPSIZE
+
+
+layout(local_size_x = NUM_THREADS) in;
+layout(push_constant) uniform pushBlock {
+    uint m;
+    uint k;
+    uint n;
+    float alpha;
+    float beta;
+};
+
+layout(binding=0) buffer buf_0 { float X[]; };
+layout(binding=1) buffer buf_1 { float W[]; };
+layout(binding=2) buffer buf_2 { float Y[]; };
+
+
+float regM[WMINTER * TM];
+float regN[WNINTER * TN];
+float threadResults[WMINTER * TM * WNINTER * TN];
+
+shared float As[BM * BK];
+shared float Bs[BK * BN];
+
+void loadRegs(uint rowStrideA, uint rowStrideB, uint a, uint b, uint as, uint bs, uint innerRowA, uint innerColA, uint innerRowB, uint innerColB){
+    //loads stuff
+    for(uint offset = 0; offset+rowStrideA <= BM; offset += rowStrideA) {
+        uint xIdx = a + (innerRowA + offset) * k + innerColA * 4;
+        vec4 tmp = vec4(X[xIdx + 0], X[xIdx + 1], X[xIdx + 2], X[xIdx + 3]);
+        As[as + ((innerColA * 4) + 0) * BM + innerRowA + offset] = tmp.x;
+        As[as + ((innerColA * 4) + 1) * BM + innerRowA + offset] = tmp.y;
+        As[as + ((innerColA * 4) + 2) * BM + innerRowA + offset] = tmp.z;
+        As[as + ((innerColA * 4) + 3) * BM + innerRowA + offset] = tmp.w;
+    }
+
+    for(uint offset = 0; offset+rowStrideB <= BK; offset += rowStrideB) {
+        uint mIdx = b + (innerRowB + offset) * n + innerColB * 4;
+        vec4 tmp = vec4(W[mIdx + 0], W[mIdx + 1], W[mIdx + 2], W[mIdx + 3]);
+        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 0] = tmp.x;
+        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 1] = tmp.y;
+        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 2] = tmp.z;
+        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 3] = tmp.w;
+    }
+}
+
+void processFromSmem(uint as, uint bs, uint wsubn, uint wsubm, uint warpRow, uint warpCol, uint threadRowWarp, uint threadColWarp){
+    for(uint dotIdx = 0; dotIdx < BK; ++dotIdx){
+        for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx){
+            for(uint i = 0; i < TM; ++i)
+                regM[wSubRowIdx * TM + i] = As[as + (dotIdx * BM) + (warpRow * WM) + (wSubRowIdx * wsubm) + (threadRowWarp * TM) + i];
+        }
+
+        for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx){
+            for(uint i = 0; i < TN; ++i)
+                regN[wSubColIdx * TN + i] = Bs[bs + (dotIdx * BN) + (warpCol * WN) + (wSubColIdx * wsubn) + (threadColWarp * TN) + i];
+        }
+
+        for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx){
+            for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx){
+
+                for (uint resIdxM = 0; resIdxM < TM; ++resIdxM) {
+                    for (uint resIdxN = 0; resIdxN < TN; ++resIdxN) {
+
+                        uint reg_idx = (wSubRowIdx * TM + resIdxM) * (WNINTER * TN) + (wSubColIdx * TN) + resIdxN;
+                        threadResults[reg_idx] = fma(regM[wSubRowIdx * TM + resIdxM], regN[wSubColIdx * TN + resIdxN], threadResults[reg_idx]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+void main(){
+    
+    if(gl_GlobalInvocationID.x == 0){
+        for(uint i = 0; i < m * k; ++i)
+            X[i] = 1.0;
+        for(uint i = 0; i < k * n; ++i)
+            W[i] = 1.0;
+        for(uint i = 0; i < m * n; ++i)
+            Y[i] = 0.0f;
+    }
+
+
+    barrier();
+
+    uint cRow = gl_WorkGroupID.y;
+    uint cCol = gl_WorkGroupID.x;
+
+    uint tid = gl_LocalInvocationID.x;
+
+    uint warpIdx = tid / WARPSIZE;
+    uint warpCol = warpIdx % (BN / WN);
+    uint warpRow = warpIdx / (BN / WN);
+
+    uint wsubm = WM / WMINTER;
+    uint wsubn = WN / WNINTER;
+
+    uint threadIdxWarp = tid % WARPSIZE;
+    uint threadColWarp = threadIdxWarp % (wsubn / TN);
+    uint threadRowWarp = threadIdxWarp / (wsubn / TN);
+
+    uint a = cRow * BM * k;
+    uint b = cCol * BN;
+    uint c = ((cRow * BM) + (warpRow * WM)) * n + (cCol * BN) + (warpCol * WN);
+    
+
+    uint innerRowA = tid / (BK / 4);
+    uint innerColA = tid % (BK / 4);
+    uint rowStrideA = (NUM_THREADS * 4) / BK;
+    
+    uint innerRowB = tid / (BN / 4);
+    uint innerColB = tid % (BN / 4);
+    uint rowStrideB = NUM_THREADS / (BN / 4);
+
+
+    for(uint blkIdx = 0; blkIdx < k; blkIdx += BK) {
+        loadRegs(rowStrideA, rowStrideB, a, b, 0, 0, innerRowA, innerColA, innerRowB, innerColB);
+        barrier();
+        
+        processFromSmem(0, 0, wsubm, wsubn, warpRow, warpCol, threadRowWarp, threadColWarp);
+        a += BK;
+        b += BK * n;
+       
+        barrier();
+    }
+
+    for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx) {
+        for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx) {
+            uint c_interm = c + (wSubRowIdx * wsubm) * n + wSubColIdx * wsubn;
+
+            for(uint resIdxM = 0; resIdxM < TM; resIdxM += 1) {
+                for(uint resIdxN = 0; resIdxN < TN; resIdxN += 4) {
+
+                    uint c_idx = c_interm + (threadRowWarp * TM + resIdxM) * n + threadColWarp * TN + resIdxN;
+                    vec4 tmp = vec4(Y[c_idx + 0], Y[c_idx + 1], Y[c_idx + 2], Y[c_idx + 3]);
+                    uint i = (wSubRowIdx * TM + resIdxM) * (WNINTER * TN) + wSubColIdx * TN + resIdxN;
+                    
+                    tmp.x = fma(alpha, threadResults[i + 0], beta * tmp.x);
+                    tmp.y = fma(alpha, threadResults[i + 1], beta * tmp.y);
+                    tmp.z = fma(alpha, threadResults[i + 2], beta * tmp.z);
+                    tmp.w = fma(alpha, threadResults[i + 3], beta * tmp.w);
+                    
+                    
+                    Y[c_idx + 0] = tmp.x;
+                    Y[c_idx + 1] = tmp.y;
+                    Y[c_idx + 2] = tmp.z;
+                    Y[c_idx + 3] = tmp.w;                    
+                }
+            }
+        }
+    }
+}
+
+
+[test]
+
+push uint 0 1000
+push uint 4 2048
+push uint 8 1024
+push float 12 1.0
+push float 16 0.000
+
+ssbo 0 67108864
+ssbo 1 67108864
+ssbo 2 67108864
+
+compute 8 2 1
+
+
+probe ssbo float 0 0 == 1
+probe ssbo float 1 0 == 1
+
+probe ssbo float 0 48 == 1
+probe ssbo float 1 48 == 1
+
+probe ssbo float 0 512 == 1
+probe ssbo float 1 512 == 1
+
+probe ssbo float 0 1020 == 1
+probe ssbo float 1 1020 == 1
+
+probe ssbo float 2 0 == 16

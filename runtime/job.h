@@ -16,17 +16,19 @@
 #include "allocator.h"
 #ifdef __linux__
 #include <stdlib.h>
+#include <filesystem>
 #endif
 
 extern std::map<std::string, size_t> k_kernel_name_count;
 
 inline std::vector<uint32_t> compile(const std::string& shader_entry, const std::string& source, char* filename)
 {
-	char tmp_filename_in[L_tmpnam];
-	char tmp_filename_out[L_tmpnam];
 	std::vector<char> buffer;
 	FILE* tmp_file;
+
 #ifdef WIN32
+	char tmp_filename_in[L_tmpnam];
+	char tmp_filename_out[L_tmpnam];
 	auto err1 = tmpnam_s(tmp_filename_in, L_tmpnam);
 	auto err2 = tmpnam_s(tmp_filename_out, L_tmpnam);
 
@@ -36,11 +38,13 @@ inline std::vector<uint32_t> compile(const std::string& shader_entry, const std:
 	auto err4 = fopen_s(&tmp_file, tmp_filename_out, "wb+");
 	i = fclose(tmp_file);
 #else
-	
+	char tmp_filename_in[] = "/tmp/compXXXXXX";
+	char tmp_filename_out[] = "/tmp/compXXXXXX";
 
 	mkstemp(tmp_filename_in);
 	mkstemp(tmp_filename_out);
 
+    
 	tmp_file = fopen(tmp_filename_in, "wb+");
 	int i = fputs(source.c_str(), tmp_file);
 	i = fclose(tmp_file);
@@ -55,11 +59,12 @@ inline std::vector<uint32_t> compile(const std::string& shader_entry, const std:
 	//std::cout << source << "\n";
 	
     const auto cmd_str = std::string(
-		"glslangValidator -V --quiet --target-env vulkan1.3 " + std::string(tmp_filename_in) + " --entry-point " + shader_entry +
+		"glslangValidator -V --target-env vulkan1.3 --quiet " + std::string(tmp_filename_in) + " --entry-point " + shader_entry +
 		" --source-entrypoint main -S comp -o " + tmp_filename_out
 	);
 
 	if (system(cmd_str.c_str())){
+        std::cerr << cmd_str << std::endl << std::endl;
         std::cerr << source << std::endl;
     	throw std::runtime_error("Error running glslangValidator command");
     }

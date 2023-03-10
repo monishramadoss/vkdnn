@@ -16,7 +16,11 @@ view::view(const uint32_t* shape, const uint32_t dims, char data_size): n_dims_(
                                                                         n_offsets_(0),
                                                                         offset_(nullptr)
 {
-	stride_[0] = 1;
+    if(dims == 0){
+        size_[0] = 0;
+        return;
+    }
+    stride_[0] = 1;
 	size_[n_dims_] = 1;
 
 	for (uint32_t i = 0; i < n_dims_; ++i)
@@ -25,13 +29,15 @@ view::view(const uint32_t* shape, const uint32_t dims, char data_size): n_dims_(
 	for (uint32_t i = 1; i < n_dims_; ++i)
 		stride_[i] = stride_[i - 1] * shape_[i - 1];
 
-	for (uint32_t i = n_dims_ - 1u;;)
-	{
-		size_[i] = size_[i + 1u] * shape_[i];
-		if (i == 0)
-			break;
-		--i;
-	}
+    if(n_dims_ > 0){
+        for (uint32_t i = n_dims_ - 1u;;)
+        {
+            size_[i] = size_[i + 1u] * shape_[i];
+            if (i == 0)
+                break;
+            --i;
+        }
+    }
 
 	for (uint32_t i = 0, j = n_dims_ - 1u; i < n_dims_ / 2u; ++i, --j)
 	{
@@ -49,6 +55,10 @@ view::view(uint32_t* shape, const uint32_t dims, const char data_size) : n_dims_
                                                                          offset_(nullptr)
 
 {
+    if(dims == 0){
+        size_[0] = 0;
+        return;
+    }
 	stride_[0] = 1;
 	size_[n_dims_] = 1;
 
@@ -205,13 +215,15 @@ view view::reshape(const uint32_t* shape, uint32_t dims)
 }
 
 
-tensor::tensor(std::vector<uint32_t>& shape, const DTYPE type) : view_(shape.data(), shape.size(), get_data_size(type)),
-                                                                 data_(new vk_block*[2]), parent_(nullptr),
+tensor::tensor(std::vector<uint32_t> &shape, const DTYPE type) : view_(shape.data(), shape.size(), get_data_size(type)),
+                                                                 data_(new vk_block *[2]), parent_(nullptr),
                                                                  d_type_(type),
                                                                  name_("tensor_" + std::to_string(++k_tensor_count))
 {
-	data_[0] = k_runtime->malloc(view_.bytes_length(), false);
-	data_[1] = nullptr;
+    if(view_.bytes_length()){
+        data_[0] = k_runtime->malloc(view_.bytes_length(), false);
+        data_[1] = nullptr;
+    }
 }
 
 
@@ -222,8 +234,10 @@ tensor::tensor(const std::vector<uint32_t>& shape, const DTYPE type) : view_(sha
                                                                        name_("tensor_" + std::to_string(
 	                                                                       ++k_tensor_count))
 {
-	data_[0] = k_runtime->malloc(view_.bytes_length(), false);
-	data_[1] = nullptr;
+	if(view_.bytes_length()){
+        data_[0] = k_runtime->malloc(view_.bytes_length(), false);
+        data_[1] = nullptr;
+    }
 }
 
 

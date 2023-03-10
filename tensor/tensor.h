@@ -45,8 +45,8 @@ class tensor final
 	DTYPE d_type_;
 	std::string name_;
 public:
-	explicit tensor(std::vector<uint32_t>& shape, DTYPE type = FLOAT);
-	explicit tensor(const std::vector<uint32_t>& shape, DTYPE type = FLOAT);
+    explicit tensor(std::vector<uint32_t>& shape, DTYPE type = FLOAT);
+	explicit tensor(const std::vector<uint32_t>& shape={}, DTYPE type = FLOAT);
 	explicit tensor(tensor* ptr, view v);
 	~tensor();
 

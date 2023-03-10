@@ -1,7 +1,270 @@
-[compute sahder]
+[compute shader]
 #version 450
 #extension GL_EXT_shader_explicit_arithmetic_types_int32: enable
 #extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable
-#extension GL_EXT_debug_printf : enable
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
 
+
+layout(push_constant) uniform pushBlock {
+    uint batch_size;
+    uint weight_size;
+    uint in_channel;
+    uint input_size;
+};
+
+
+// cols = input_size;
+// rows = batch_size * in_channel;
+
+
+layout(local_size_x = 128, local_size_y = 8) in;
+
+layout(binding=0) buffer buf_0 {float x[];};
+layout(binding=1) buffer buf_1 {float m[];};
+layout(binding=2) buffer buf_2 {float y[];};
+layout(binding=3) buffer buf_3 {float v[];};
+layout(binding=4) buffer buf_4 {float g[];};
+layout(binding=5) buffer buf_5 {float b[];};
+
+shared float ATile[128][8];
+
+
+void WarpReduce(uint blockSize, uint tidx, uint tidy){
+    if(blockSize >= 64) { 
+        ATile[tidx][tidy] += ATile[tidx + 32][tidy]; 
+        memoryBarrierShared();
+    }
+    if(blockSize >= 32) {
+        ATile[tidx][tidy] += ATile[tidx + 16][tidy];
+        memoryBarrierShared();
+    }       
+    if(blockSize >= 16) {
+        ATile[tidx][tidy] += ATile[tidx +  8][tidy];
+        memoryBarrierShared();
+    }
+    if(blockSize >=  8) {
+        ATile[tidx][tidy] += ATile[tidx +  4][tidy];
+        memoryBarrierShared();
+    }
+    if(blockSize >=  4) {
+        ATile[tidx][tidy] += ATile[tidx +  2][tidy];
+        memoryBarrierShared();
+    }
+    if(blockSize >=  2) {
+        ATile[tidx][tidy] += ATile[tidx +  1][tidy];
+        memoryBarrierShared();
+    }
+}
+
+void sum(uint tidx, uint tidy, uint i, uint j, uint X, uint Y, uint blockSize){
+    memoryBarrierShared();
+    barrier();
+    
+    if(blockSize >= 512){
+        if(tidx < 256)
+            ATile[tidx][tidy] += ATile[tidx + 256][tidy];
+        memoryBarrierShared();
+    }
+
+    if(blockSize >= 256){
+        if(tidx < 128)
+            ATile[tidx][tidy] += ATile[tidx + 128][tidy];
+        memoryBarrierShared();
+    }
+
+    if(blockSize >= 128){
+        if(tidx < 64)
+            ATile[tidx][tidy] += ATile[tidx + 64][tidy];
+        memoryBarrierShared();
+    }
+    
+    if(tidy < 32)
+        WarpReduce(blockSize, tidx, tidy);
+
+    memoryBarrierShared();
+    barrier();
+}
+
+uint mean(uint tidx, uint tidy, uint i, uint j, uint X, uint Y, uint blockSize){
+     if(j < Y)
+        m[j] = 0;
+    else
+        return 1;
+
+    if(i < X)
+        ATile[tidx][tidy] = x[i + j * X];
+    else 
+        return 1;
+    
+    if(j * X + i + blockSize < X * Y)
+        ATile[tidx][tidy] += x[i + j * X + blockSize];
+
+    sum(tidx, tidy, i, j, X, Y, blockSize);
+
+    if(tidx == 0)
+        m[j] += ATile[0][tidy] / input_size;
+
+    return 0;
+}
+
+void var(uint tidx, uint tidy, uint i, uint j,  uint X, uint Y, uint blockSize){
+    ATile[tidx][tidy] = (x[i + j * X] - m[j]) * (x[i + j * X] - m[j]);
+    if(j * X + i + blockSize < X * Y)
+        ATile[tidy][tidy] = (x[i + j * X + blockSize] - m[j]) * (x[i + j * X + blockSize] - m[j]);
+    
+    sum(tidx, tidy, i, j, X, Y, blockSize);
+    
+    if(tidx == 0)
+        v[j] += ATile[0][tidy] / input_size;
+}
+/*
+
+    x 0
+
+    m 1
+    y 2
+    v 3
+    g 
+    b 
+
+*/
+
+void main(){
+    uint gx = gl_NumWorkGroups.x;
+    uint gz = gl_NumWorkGroups.y;
+
+    uint bx = gl_WorkGroupID.x;
+    uint by = gl_WorkGroupID.y;
+
+    uint blockSize = gl_WorkGroupSize.x;
+    uint nDimSize = gl_WorkGroupSize.y;
+
+    uint tidx = gl_LocalInvocationID.x;
+    uint tidy = gl_LocalInvocationID.y;
+
+    ATile[tidx][tidy] = 0;
+
+    uint i = gl_GlobalInvocationID.x;
+    uint j = gl_GlobalInvocationID.y;
+
+    uint Y = batch_size * in_channel;
+    uint X = input_size;
+    
+    if(mean(tidx, tidy, i, j, X, Y, blockSize))
+        return;
+    
+    var(tidx, tidy, i, j, X, Y, blockSize);  
+
+
+}
+
+
+
+
+[test]
+push uint 0 2
+push uint 4 2
+push uint 8 4
+push uint 12 9
+
+# 2*4* 4
+ssbo 1 32
+ssbo 2 288
+ssbo 3 32
+
+ssbo 4 9 
+ssbo 5 9
+
+
+
+
+# 2*4 x 3*3
+ssbo 0 subdata float 0 1
+ssbo 0 subdata float 4 1
+ssbo 0 subdata float 8 1
+ssbo 0 subdata float 12 1
+ssbo 0 subdata float 16 1
+ssbo 0 subdata float 20 1
+ssbo 0 subdata float 24 1
+ssbo 0 subdata float 28 1
+ssbo 0 subdata float 32 1
+ssbo 0 subdata float 36 1
+ssbo 0 subdata float 40 1
+ssbo 0 subdata float 44 1
+ssbo 0 subdata float 48 1
+ssbo 0 subdata float 52 1
+ssbo 0 subdata float 56 1
+ssbo 0 subdata float 60 1
+ssbo 0 subdata float 64 1
+ssbo 0 subdata float 68 1
+ssbo 0 subdata float 72 1
+ssbo 0 subdata float 76 1
+ssbo 0 subdata float 80 1
+ssbo 0 subdata float 84 1
+ssbo 0 subdata float 88 1
+ssbo 0 subdata float 92 1
+ssbo 0 subdata float 96 1
+ssbo 0 subdata float 100 1
+ssbo 0 subdata float 104 1
+ssbo 0 subdata float 108 1
+ssbo 0 subdata float 112 1
+ssbo 0 subdata float 116 1
+ssbo 0 subdata float 120 1
+ssbo 0 subdata float 124 1
+ssbo 0 subdata float 128 1
+ssbo 0 subdata float 132 1
+ssbo 0 subdata float 136 1
+ssbo 0 subdata float 140 1
+ssbo 0 subdata float 144 1
+ssbo 0 subdata float 148 1
+ssbo 0 subdata float 152 1
+ssbo 0 subdata float 156 1
+ssbo 0 subdata float 160 1
+ssbo 0 subdata float 164 1
+ssbo 0 subdata float 168 1
+ssbo 0 subdata float 172 1
+ssbo 0 subdata float 176 1
+ssbo 0 subdata float 180 1
+ssbo 0 subdata float 184 1
+ssbo 0 subdata float 188 1
+ssbo 0 subdata float 192 1
+ssbo 0 subdata float 196 1
+ssbo 0 subdata float 200 1
+ssbo 0 subdata float 204 1
+ssbo 0 subdata float 208 1
+ssbo 0 subdata float 212 1
+ssbo 0 subdata float 216 1
+ssbo 0 subdata float 220 1
+ssbo 0 subdata float 224 1
+ssbo 0 subdata float 228 1
+ssbo 0 subdata float 232 1
+ssbo 0 subdata float 236 1
+ssbo 0 subdata float 240 1
+ssbo 0 subdata float 244 1
+ssbo 0 subdata float 248 1
+ssbo 0 subdata float 252 1
+ssbo 0 subdata float 256 1
+ssbo 0 subdata float 260 1
+ssbo 0 subdata float 264 1
+ssbo 0 subdata float 268 1
+ssbo 0 subdata float 272 1
+ssbo 0 subdata float 276 1
+ssbo 0 subdata float 280 1
+ssbo 0 subdata float 284 1
+
+
+
+compute 2 1 1
+
+
+
+probe ssbo float 1 0 == 9
+probe ssbo float 1 4 == 9
+probe ssbo float 1 8 == 9
+probe ssbo float 1 12 == 9
+probe ssbo float 1 16 == 9
+probe ssbo float 1 20 == 9
+probe ssbo float 1 24 == 9
+probe ssbo float 1 28 == 9
 

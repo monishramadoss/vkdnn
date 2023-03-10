@@ -31,11 +31,15 @@ inline std::string singlton_shader_code(const std::string &kernel_shader_code, c
     std::string shader_tensor;
     const int ext_int_0 = tensor_injection(local_shader, shader_tensor, 0, t1);
     local_shader = shader_extensions[ext_int_0] + local_shader;
-
     local_shader = SHADER_VERSION + local_shader;
 
-    local_shader += "\nvoid main() {\n\tfor (uint i = gl_GlobalInvocationID.x; i < total; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x){\n\t\t";
-    local_shader += Format(fn_pass, shader_tensor.c_str()) + "\n\t}\n}";
+    local_shader += R"(
+void main() {
+    for (uint i = gl_GlobalInvocationID.x; i < total; i += gl_NumWorkGroups.x * gl_WorkGroupSize.x) {
+        )" + Format(fn_pass, shader_tensor.c_str()) + R"(
+    }
+}
+    )";
     return local_shader;
 }
 
@@ -186,6 +190,36 @@ void main() {
     return local_shader;
 }
 
+static std::string unfold_offset_engine_code = R"(
+int offset_engine(uint offset_a, uint offset_b)
+{   
+    uint idx = NDIMS - 1 + 2;
+    uint idx2 = idx - 2;
+    uint index_a = offset_b % o(NDIMS + idx);
+    uint index_b = offset_a % o(idx);
+    uint o1 = offset_b / o(NDIMS + idx);
+    uint o2 = offset_a / o(idx);
+    uint o3 = offset_a / k(idx2);
+    
+    uint ot = index_a * s(idx2) + index_b * d(idx2) - p(idx2); 
+
+    for(idx = idx-1; idx > 1; --idx){
+        idx2 = idx - 2;
+        index_a = o1 % o(NDIMS + idx);
+        index_b = o2 % o(idx);
+        uint offset = index_a * s(idx2) + index_b * d(idx2) - p(idx2);
+        ot += offset * i(idx);
+        if(offset >= i(idx))
+            return -1;
+        o1 = o1 / o(NDIMS + idx);
+        o2 = o2 / o(idx);
+        o3 = o3 / k(idx2);
+    }
+
+    return int(ot + o3 * input_size);
+})";
+
+// TODO add batching into the offset engine using channel and batch to index the j dim
 
 inline std::string inplace_unfold_functions_kernel(const std::string &kernel_shader_code, std::string fn_string, const tensor &pt, const tensor &t1, const tensor &t2, const tensor &t3)
 {
@@ -244,34 +278,7 @@ inline std::string inplace_unfold_functions_kernel(const std::string &kernel_sha
 shared )" + tmp_type + R"( ATile[TILE_DIM][TILE_DIM];
 shared )" + tmp_type + R"( BTile[TILE_DIM][TILE_DIM];
 
-int offset_engine(uint offset_a, uint offset_b)
-{   
-    uint idx = NDIMS - 1 + 2;
-    uint idx2 = idx - 2;
-    uint index_a = offset_b % o(NDIMS + idx);
-    uint index_b = offset_a % o(idx);
-    uint o1 = offset_b / o(NDIMS + idx);
-    uint o2 = offset_a / o(idx);
-    uint o3 = offset_a / k(idx2);
-    
-    uint ot = index_a * s(idx2) + index_b * d(idx2) - p(idx2); 
-
-    for(idx = idx-1; idx > 1; --idx){
-        idx2 = idx - 2;
-        index_a = o1 % o(NDIMS + idx);
-        index_b = o2 % o(idx);
-        uint offset = index_a * s(idx2) + index_b * d(idx2) - p(idx2);
-        ot += offset * i(idx);
-        if(offset >= i(idx))
-            return -1;
-        o1 = o1 / o(NDIMS + idx);
-        o2 = o2 / o(idx);
-        o3 = o3 / k(idx2);
-    }
-
-    return int(ot + o3 * input_size);
-}
-
+)" + unfold_offset_engine_code + R"(
 
 void main() {
 
@@ -291,12 +298,12 @@ void main() {
     )" + tmp_type + R"( elementC = 0;
     for(uint t = 0; t < (n-1) / TILE_DIM + 1; ++t){
         if(row < m && t * TILE_DIM + thrX < n)
-            ATile[thrY][thrX] =)" + shader_tensor[2] + R"([row*n + t*TILE_DIM+thrX];
+            ATile[thrY][thrX] = )" + shader_tensor[2] + R"([row*n + t*TILE_DIM+thrX];
         else
             ATile[thrY][thrX] = 0.0f;
         int in_offset = offset_engine(t*TILE_DIM+thrY, col);
         if (t*TILE_DIM+thrY < n && col < k && in_offset != -1)
-            BTile[thrY][thrX] =)" + shader_tensor[1] + R"([in_offset];
+            BTile[thrY][thrX] = )" + shader_tensor[1] + R"([in_offset];
         else
             BTile[thrY][thrX] = 0.0f;
         barrier();
@@ -325,15 +332,10 @@ inline std::string inplace_pool_functions_kernel(const std::string &kernel_shade
 
     if (ext_int_0 == ext_int_1)
         local_shader = shader_extensions[ext_int_0] + local_shader;
-
-    if (ext_int_1 == ext_int_2) {
-        local_shader = shader_extensions[ext_int_1] + local_shader;
-    }
     else
     {
         local_shader = shader_extensions[ext_int_0] + local_shader;
         local_shader = shader_extensions[ext_int_1] + local_shader;
-        local_shader = shader_extensions[ext_int_2] + local_shader;
     }
 
     local_shader += "#define k(x) " + shader_tensor[0] + "[x]\n";
@@ -342,41 +344,16 @@ inline std::string inplace_pool_functions_kernel(const std::string &kernel_shade
     local_shader += "#define d(x) " + shader_tensor[0] + "[x + NDIMS*3]\n";
     local_shader += "#define i(x) " + shader_tensor[0] + "[x + NDIMS*4]\n";
     local_shader += "#define o(x) " + shader_tensor[0] + "[x + NDIMS*5]\n";
-    local_shader = SHADER_VERSION + local_shader;
-    
+    local_shader = SHADER_VERSION +  local_shader;
+
     std::string tmp_type;
     gen_type(t1.get_type(), tmp_type);
 
     local_shader +=  R"(
 shared )" + tmp_type + R"( ATile[TILE_DIM];
 
-int offset_engine(uint offset_a, uint offset_b)
-{   
-    uint idx = NDIMS - 1 + 2;
-    uint idx2 = idx - 2;
-    uint index_a = offset_b % o(NDIMS + idx);
-    uint index_b = offset_a % o(idx);
-    uint o1 = offset_b / o(NDIMS + idx);
-    uint o2 = offset_a / o(idx);
-    uint o3 = offset_a / k(idx2);
-    
-    uint ot = index_a * s(idx2) + index_b * d(idx2) - p(idx2); 
+)" + unfold_offset_engine_code + R"(
 
-    for(idx = idx-1; idx > 1; --idx){
-        idx2 = idx - 2;
-        index_a = o1 % o(NDIMS + idx);
-        index_b = o2 % o(idx);
-        uint offset = index_a * s(idx2) + index_b * d(idx2) - p(idx2);
-        ot += offset * i(idx);
-        if(offset >= i(idx))
-            return -1;
-        o1 = o1 / o(NDIMS + idx);
-        o2 = o2 / o(idx);
-        o3 = o3 / k(idx2);
-    }
-
-    return int(ot + o3 * input_size);
-}
 
 void main(){
     uint kernel_size = 1;
@@ -410,5 +387,147 @@ void main(){
 
 })";
 
+    return local_shader;
+}
+
+
+inline std::string norm_shader_code(const std::string &kernel_shader_code, const tensor& t1, const tensor& t2, const tensor& t3, const tensor& t4, const tensor& t5, const tensor& t6) {
+    
+    std::string local_shader = kernel_shader_code;
+    std::string shader_tensor[6];
+    const int ext_int_0 = tensor_injection(local_shader, shader_tensor[0], 0, t1);
+    const int ext_int_1 = tensor_injection(local_shader, shader_tensor[5], 1, t2);
+    const int ext_int_2 = tensor_injection(local_shader, shader_tensor[2], 2, t3);
+    const int ext_int_3 = tensor_injection(local_shader, shader_tensor[3], 3, t4);
+    const int ext_int_4 = tensor_injection(local_shader, shader_tensor[4], 4, t5);
+    const int ext_int_5 = tensor_injection(local_shader, shader_tensor[1], 5, t6);
+
+    
+    if (ext_int_0 == ext_int_1)
+        local_shader = shader_extensions[ext_int_0] + local_shader;
+
+    if (ext_int_1 == ext_int_2) {
+        local_shader = shader_extensions[ext_int_1] + local_shader;
+    }
+    else
+    {
+        local_shader = shader_extensions[ext_int_0] + local_shader;
+        local_shader = shader_extensions[ext_int_1] + local_shader;
+        local_shader = shader_extensions[ext_int_2] + local_shader;
+    }
+
+    local_shader = SHADER_VERSION +  local_shader;
+    std::string tmp_type;
+    gen_type(t1.get_type(), tmp_type);
+    
+    local_shader += R"(
+
+shared )" + tmp_type + R"( thread_mean[THREAD_COUNT];
+shared )" + tmp_type + R"( thread_m2[THREAD_COUNT];
+shared uint thread_count[THREAD_COUNT];
+
+
+void welford_combine(float val, inout uint count, inout float mean, inout float m2)
+{
+    count += 1;
+    float delta1 = val - mean;
+    mean = delta1 / count;
+    float delta2 = val - mean;
+    m2 += delta1 * delta2;
+}
+
+void welford_combine_2(uint count_b, float mean_b, float m2_b, inout uint count_a, inout float mean_a, inout float m2_a)
+{
+    uint count = count_b + count_a;
+    float nb = count_b / count;
+    float delta = mean_b - mean_a;
+    mean_a += delta * nb;
+    m2_a += m2_b + delta * count_a * nb;
+    count_a = count;
+} 
+
+void welford_reduce(uint tidx){
+    if(THREAD_COUNT >= 128){
+        welford_combine_2(thread_count[tidx + 64], thread_mean[tidx + 64], thread_m2[tidx + 64],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 64){
+        welford_combine_2(thread_count[tidx + 32], thread_mean[tidx + 32], thread_m2[tidx + 32],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 32){
+        welford_combine_2(thread_count[tidx + 16], thread_mean[tidx + 16], thread_m2[tidx + 16],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 16){
+        welford_combine_2(thread_count[tidx + 8], thread_mean[tidx + 8], thread_m2[tidx + 8],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 8){
+        welford_combine_2(thread_count[tidx + 4], thread_mean[tidx + 4], thread_m2[tidx + 4],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 4){
+        welford_combine_2(thread_count[tidx + 2], thread_mean[tidx + 2], thread_m2[tidx + 2],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 2){
+        welford_combine_2(thread_count[tidx + 1], thread_mean[tidx + 1], thread_m2[tidx + 1],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+}
+
+void main(){
+    
+    uint rows = batch_size;
+    uint cols = input_size * in_channel;
+    
+    uint tid = gl_LocalInvocationID.x;
+    uint nwg = gl_NumWorkGroups.x;
+    uint wgid = gl_WorkGroupID.x;
+    uint blkS = gl_WorkGroupSize.x;
+
+
+    for(uint row = wgid; row < rows; row += nwg) {  
+
+        thread_count[tid] = 0;
+        thread_mean[tid] = 0.0f;
+        thread_m2[tid] = 0.0f;
+
+        for(uint col = tid; col < cols; col += blkS)
+            welford_combine()" + shader_tensor[0] + R"([row * cols + col], thread_count[tid], thread_mean[tid], thread_m2[tid]);
+
+        welford_reduce(tid);
+
+        )" + tmp_type + R"( row_variance = max(thread_m2[0] / thread_count[0], 0);
+        )" + tmp_type + R"( row_inv_var = inversesqrt(row_variance + epsilon);
+        )" + tmp_type + R"( row_mean = thread_mean[0];
+
+        if(tid == 0){
+            )" + shader_tensor[1] + R"([row] = momentum * row_mean + (1 - momentum) * )" + shader_tensor[1] + R"([row];
+            )" + shader_tensor[2] + R"([row] = momentum * row_variance + (1 - momentum) * )" + shader_tensor[2] + R"([row];
+        }
+
+
+        for(uint col = tid; col < cols; col += blkS)
+            )" + shader_tensor[5] + R"([row * cols + col] = ()" + shader_tensor[0] + R"([row * cols + col] - row_mean) * row_inv_var * )" + shader_tensor[3] + R"([col] + )" + shader_tensor[4] + R"([col];              
+      
+    }
+   
+})";
     return local_shader;
 }

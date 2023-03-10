@@ -34,7 +34,7 @@ void main()
     if(gl_GlobalInvocationID.x < total){
         acc = tensor_0[gl_GlobalInvocationID.x];
     }
-    acc = subgroupAdd(acc);
+    acc = %s;
 
     if(gl_SubgroupInvocationID == 0)
     {
@@ -47,7 +47,7 @@ void main()
     if(gl_SubgroupID==0)
     {
         acc = gl_SubgroupInvocationID < gl_NumSubgroups ? data[gl_SubgroupInvocationID] : 0;
-        acc = subgroupAdd(acc);
+        acc = %s;
     }
 
     if(gl_LocalInvocationID.x == 0)
@@ -72,8 +72,7 @@ inline uint32_t set_group_size(reduction_param p)
 void reduce_sum(const tensor& t1, const tensor& t2)
 {
     const reduction_param p { static_cast<uint32_t>(t1.get_size()) };
-    // const std::string kernel_code = reduction_shader_code_math(reduction_shader, "subgroupAdd(acc)", t1, t2);
-   
+    const std::string kernel_code = reduction_shader_code_math(reduction_shader, "subgroupAdd(acc)", t1, t2);   
     k_runtime->make_job<reduction_param>("reduce_add", temp_reduce_sum, { t1.get_data(), t2.get_data()},
         p, set_group_size(p));
 }

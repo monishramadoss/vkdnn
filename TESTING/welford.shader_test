@@ -1,0 +1,283 @@
+[require]
+VK_KHR_shader_float16_int8
+
+
+[compute shader]
+#version 460
+#extension GL_EXT_shader_explicit_arithmetic_types_int32: enable
+#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#define THREAD_COUNT 128
+
+layout(push_constant) uniform pushBlock {
+    uint batch_size;
+    uint in_channel;
+    uint input_size;
+};
+
+
+// cols = input_size;
+// rows = batch_size * in_channel;
+
+
+layout(local_size_x = THREAD_COUNT, local_size_y = 1) in;
+
+layout(binding=0) buffer buf_0 {float x[];};
+layout(binding=1) buffer buf_1 {float m[];};
+layout(binding=2) buffer buf_2 {float y[];};
+
+layout(binding=3) buffer buf_3 {float v[];};
+layout(binding=4) buffer buf_4 {float g[];};
+layout(binding=5) buffer buf_5 {float b[];};
+
+
+float epsilon = 0.00001;
+
+void welford_combine(float val, inout uint count, inout float mean, inout float m2)
+{
+    count += 1;
+    float delta1 = val - mean;
+    mean = delta1 / count;
+    float delta2 = val - mean;
+    m2 += delta1 * delta2;
+}
+
+void welford_combine_2(uint count_b, float mean_b, float m2_b, inout uint count_a, inout float mean_a, inout float m2_a)
+{
+    uint count = count_b + count_a;
+    float nb = count_b / count;
+    float delta = mean_b - mean_a;
+    mean_a += delta * nb;
+    m2_a += m2_b + delta * count_a * nb;
+    count_a = count;
+} // can introduce subgroups here
+
+
+shared float thread_mean[THREAD_COUNT];
+shared float thread_m2[THREAD_COUNT];
+shared uint thread_count[THREAD_COUNT];
+
+
+void welford_reduce(uint tidx){
+    if(THREAD_COUNT >= 128){
+        welford_combine_2(
+            thread_count[tidx + 64],
+            thread_mean[tidx + 64],
+            thread_m2[tidx + 64],
+            thread_count[tidx],
+            thread_mean[tidx],
+            thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 64){
+        welford_combine_2(
+            thread_count[tidx + 32],
+            thread_mean[tidx + 32], 
+            thread_m2[tidx + 32],
+            thread_count[tidx], 
+            thread_mean[tidx], 
+            thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 32){
+        welford_combine_2(
+            thread_count[tidx + 16],
+            thread_mean[tidx + 16], 
+            thread_m2[tidx + 16],
+            thread_count[tidx], 
+            thread_mean[tidx], 
+            thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 16){
+        welford_combine_2(
+            thread_count[tidx + 8],
+            thread_mean[tidx + 8], 
+            thread_m2[tidx + 8],
+            thread_count[tidx], 
+            thread_mean[tidx], 
+            thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 8){
+        welford_combine_2(
+            thread_count[tidx + 4],
+            thread_mean[tidx + 4], 
+            thread_m2[tidx + 4],
+            thread_count[tidx], 
+            thread_mean[tidx], 
+            thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 4){
+        welford_combine_2(
+            thread_count[tidx + 2],
+            thread_mean[tidx + 2], 
+            thread_m2[tidx + 2],
+            thread_count[tidx], 
+            thread_mean[tidx], 
+            thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 2){
+        welford_combine_2(
+            thread_count[tidx + 1],
+            thread_mean[tidx + 1], 
+            thread_m2[tidx + 1],
+            thread_count[tidx], 
+            thread_mean[tidx], 
+            thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+}
+
+
+
+void main(){
+
+    uint rows = batch_size;
+    uint cols = input_size * in_channel;
+    
+  
+    uint tid = gl_LocalInvocationID.x;
+    uint nwg = gl_NumWorkGroups.x;
+    uint wgid = gl_WorkGroupID.x;
+    uint blkS = gl_WorkGroupSize.x;
+
+
+    for(uint row = wgid; row < rows; row += nwg) {      
+
+        thread_count[tid] = 0;
+        thread_mean[tid] = 0.0f;
+        thread_m2[tid] = 0.0f;
+
+        for(uint col = tid; col < cols; col += blkS){
+            welford_combine(x[row * cols + col], thread_count[tid], thread_mean[tid], thread_m2[tid]);
+        }
+
+        welford_reduce(tid);
+
+        
+
+        float row_variance = max(thread_m2[0] / thread_count[0], 0);
+        float row_inv_var = inversesqrt(row_variance + epsilon);
+        float row_mean = thread_mean[0];
+
+        if(tid == 0){
+            m[row] = row_mean;
+            v[row] = row_variance;
+        }
+
+
+        for(uint col = tid; col < cols; col += blkS){
+            y[row * cols + col] = (x[row * cols + col] - row_mean) * row_inv_var;              
+        }
+      
+    }
+    
+}
+
+
+[test]
+push uint 0 2
+push uint 4 4
+push uint 8 9
+
+# 2*4 * 4
+ssbo 1 32
+ssbo 2 288
+ssbo 3 32
+ssbo 4 9 
+ssbo 5 9
+
+
+# 2*4 x 3*3
+ssbo 0 subdata float 0 1
+ssbo 0 subdata float 4 1
+ssbo 0 subdata float 8 1
+ssbo 0 subdata float 12 1
+ssbo 0 subdata float 16 1
+ssbo 0 subdata float 20 1
+ssbo 0 subdata float 24 1
+ssbo 0 subdata float 28 1
+ssbo 0 subdata float 32 1
+ssbo 0 subdata float 36 1
+ssbo 0 subdata float 40 1
+ssbo 0 subdata float 44 1
+ssbo 0 subdata float 48 1
+ssbo 0 subdata float 52 1
+ssbo 0 subdata float 56 1
+ssbo 0 subdata float 60 1
+ssbo 0 subdata float 64 1
+ssbo 0 subdata float 68 1
+ssbo 0 subdata float 72 1
+ssbo 0 subdata float 76 1
+ssbo 0 subdata float 80 1
+ssbo 0 subdata float 84 1
+ssbo 0 subdata float 88 1
+ssbo 0 subdata float 92 1
+ssbo 0 subdata float 96 1
+ssbo 0 subdata float 100 1
+ssbo 0 subdata float 104 1
+ssbo 0 subdata float 108 1
+ssbo 0 subdata float 112 1
+ssbo 0 subdata float 116 1
+ssbo 0 subdata float 120 1
+ssbo 0 subdata float 124 1
+ssbo 0 subdata float 128 1
+ssbo 0 subdata float 132 1
+ssbo 0 subdata float 136 1
+ssbo 0 subdata float 140 1
+ssbo 0 subdata float 144 1
+ssbo 0 subdata float 148 1
+ssbo 0 subdata float 152 1
+ssbo 0 subdata float 156 1
+ssbo 0 subdata float 160 1
+ssbo 0 subdata float 164 1
+ssbo 0 subdata float 168 1
+ssbo 0 subdata float 172 1
+ssbo 0 subdata float 176 1
+ssbo 0 subdata float 180 1
+ssbo 0 subdata float 184 1
+ssbo 0 subdata float 188 1
+ssbo 0 subdata float 192 1
+ssbo 0 subdata float 196 1
+ssbo 0 subdata float 200 1
+ssbo 0 subdata float 204 1
+ssbo 0 subdata float 208 1
+ssbo 0 subdata float 212 1
+ssbo 0 subdata float 216 1
+ssbo 0 subdata float 220 1
+ssbo 0 subdata float 224 1
+ssbo 0 subdata float 228 1
+ssbo 0 subdata float 232 1
+ssbo 0 subdata float 236 1
+ssbo 0 subdata float 240 1
+ssbo 0 subdata float 244 1
+ssbo 0 subdata float 248 1
+ssbo 0 subdata float 252 1
+ssbo 0 subdata float 256 1
+ssbo 0 subdata float 260 1
+ssbo 0 subdata float 264 1
+ssbo 0 subdata float 268 1
+ssbo 0 subdata float 272 1
+ssbo 0 subdata float 276 1
+ssbo 0 subdata float 280 1
+ssbo 0 subdata float 284 1
+
+
+
+compute 2 1 1
+
+
+probe ssbo float 1 0 == 1
+probe ssbo float 2 0 == 0
+probe ssbo float 3 0 == 0

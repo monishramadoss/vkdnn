@@ -1,0 +1,131 @@
+#version 460
+#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable 
+#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable 
+#define THREAD_COUNT 128
+
+
+layout(push_constant) uniform pushBlock {
+    uint batch_size;
+    uint in_channel;        
+    uint input_size;
+    float momentum;
+    float epsilon;
+};
+
+layout(local_size_x = THREAD_COUNT) in; 
+
+layout(binding=0) buffer buf_0 { float tensor_0[]; };
+layout(binding=5) buffer buf_5 { float tensor_5[]; };
+layout(binding=2) buffer buf_2 { float tensor_2[]; };
+layout(binding=3) buffer buf_3 { float tensor_3[]; };
+layout(binding=4) buffer buf_4 { float tensor_4[]; };
+layout(binding=1) buffer buf_1 { float tensor_1[]; };
+
+
+shared float thread_mean[THREAD_COUNT];
+shared float thread_m2[THREAD_COUNT];
+shared uint thread_count[THREAD_COUNT];
+
+
+void welford_combine(float val, inout uint count, inout float mean, inout float m2)
+{
+    count += 1;
+    float delta1 = val - mean;
+    mean = delta1 / count;
+    float delta2 = val - mean;
+    m2 += delta1 * delta2;
+}
+
+void welford_combine_2(uint count_b, float mean_b, float m2_b, inout uint count_a, inout float mean_a, inout float m2_a)
+{
+    uint count = count_b + count_a;
+    float nb = count_b / count;
+    float delta = mean_b - mean_a;
+    mean_a += delta * nb;
+    m2_a += m2_b + delta * count_a * nb;
+    count_a = count;
+} 
+
+void welford_reduce(uint tidx){
+    if(THREAD_COUNT >= 128){
+        welford_combine_2(thread_count[tidx + 64], thread_mean[tidx + 64], thread_m2[tidx + 64],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 64){
+        welford_combine_2(thread_count[tidx + 32], thread_mean[tidx + 32], thread_m2[tidx + 32],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 32){
+        welford_combine_2(thread_count[tidx + 16], thread_mean[tidx + 16], thread_m2[tidx + 16],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 16){
+        welford_combine_2(thread_count[tidx + 8], thread_mean[tidx + 8], thread_m2[tidx + 8],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 8){
+        welford_combine_2(thread_count[tidx + 4], thread_mean[tidx + 4], thread_m2[tidx + 4],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 4){
+        welford_combine_2(thread_count[tidx + 2], thread_mean[tidx + 2], thread_m2[tidx + 2],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+    if(THREAD_COUNT >= 2){
+        welford_combine_2(thread_count[tidx + 1], thread_mean[tidx + 1], thread_m2[tidx + 1],
+            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
+        );
+        memoryBarrierShared();
+    }
+}
+
+void main(){
+    
+    uint rows = batch_size;
+    uint cols = input_size * in_channel;
+    
+    uint tid = gl_LocalInvocationID.x;
+    uint nwg = gl_NumWorkGroups.x;
+    uint wgid = gl_WorkGroupID.x;
+    uint blkS = gl_WorkGroupSize.x;
+
+
+    for(uint row = wgid; row < rows; row += nwg) {  
+
+        thread_count[tid] = 0;
+        thread_mean[tid] = 0.0f;
+        thread_m2[tid] = 0.0f;
+
+        for(uint col = tid; col < cols; col += blkS)
+            welford_combine(tensor_0[row * cols + col], thread_count[tid], thread_mean[tid], thread_m2[tid]);
+
+        welford_reduce(tid);
+
+        float row_variance = max(thread_m2[0] / thread_count[0], 0);
+        float row_inv_var = inversesqrt(row_variance + epsilon);
+        float row_mean = thread_mean[0];
+
+        if(tid == 0){
+            tensor_1[row] = momentum * row_mean + (1 - momentum) * tensor_1[row];
+            tensor_2[row] = momentum * row_variance + (1 - momentum) * tensor_2[row];
+        }
+
+
+        for(uint col = tid; col < cols; col += blkS)
+            tensor_5[row * cols + col] = (tensor_0[row * cols + col] - row_mean) * row_inv_var * tensor_3[col] + tensor_4[col];              
+      
+    }
+   
+}

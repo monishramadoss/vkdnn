@@ -6,7 +6,7 @@
 #define TILE_DIM 32
 
 inline std::string pool_kernel_code = R"(
-layout(push_constant) uniform pushBlock{
+layout(push_constant) uniform pushBlock {
     uint batch_size;
     uint in_channel;
     uint input_size;
@@ -36,7 +36,7 @@ void maxpoolNd(tensor& param, tensor& x, tensor& y){
     const pool_param p {x.get_shape(0), x.get_shape(1), (uint32_t)x.get_size(2), (uint32_t)y.get_size(2)};
     std::string kernel_code = "#define TILE_DIM " + std::to_string(TILE_DIM) + "\n#define NDIMS " + std::to_string(ndims) + "\n" + pool_kernel_code;
     kernel_code = inplace_pool_functions_kernel(kernel_code, "max(%s, %s);", param, x, y);
-    k_runtime->make_job<pool_param>("maxPoolNd", kernel_code, {param.get_data(), x.get_data(), y.get_data()}, p, set_group_size(p));
+    k_runtime->make_job<pool_param>("maxPoolNd", kernel_code, {param.get_data(), x.get_data(), y.get_data()}, p, set_group_size_x(p));
 }
 
 void maxpool1d(tensor& param, tensor& x, tensor& y){
@@ -58,7 +58,7 @@ void avgpoolNd(tensor& param, tensor& x, tensor& y){
     const pool_param p {x.get_shape(0), x.get_shape(1), (uint32_t)x.get_size(2), (uint32_t)y.get_size(2)};
     std::string kernel_code = "#define TILE_DIM " + std::to_string(TILE_DIM) + "\n#define NDIMS " + std::to_string(ndims) + "\n" + pool_kernel_code;
     kernel_code = inplace_pool_functions_kernel(kernel_code, " 1 / kernel_size * %s + %s;", param, x, y);
-    k_runtime->make_job<pool_param>("maxPoolNd", kernel_code, {param.get_data(), x.get_data(), y.get_data()}, p, set_group_size(p));
+    k_runtime->make_job<pool_param>("maxPoolNd", kernel_code, {param.get_data(), x.get_data(), y.get_data()}, p, set_group_size_x(p));
 }
 
 void avgpool1d(tensor& param, tensor& x, tensor& y){
