@@ -312,16 +312,11 @@ vk_block* tensor::get_host_data() const
 
 void tensor::sync(const bool to_device) const
 {
-	if (data_[1] == nullptr)
-	{
-		data_[1] = k_runtime->malloc(data_[0]->size, true);
-		memset(data_[1]->ptr, 0, data_[1]->size);
-	}
-
+    vk_block* blk = get_host_data();
 	if (to_device)
-		k_runtime->memcpy(data_[1], data_[0], 0, 0);
-	else
-		k_runtime->memcpy(data_[0], data_[1], 0, 0);
+		k_runtime->memcpy(blk, data_[0], 0, 0);
+	else 
+		k_runtime->memcpy(data_[0], blk, 0, 0);
 }
 
 void tensor::set_data(vk_block* blk)
@@ -400,6 +395,78 @@ int gen_type(const DTYPE type, std::string& type_name)
 	}
 	return -1;
 }
+
+
+int gen_pack(const DTYPE type, std::string& type_name, char size)
+{
+	if (type == BOOL)
+	{
+		type_name = "bvec" + std::to_string(size);
+		return 0;
+	}
+	if (type == HFLOAT)
+	{
+		type_name = "vec" + std::to_string(size);
+		return 5;
+	}
+	if (type == FLOAT)
+	{
+		type_name = "vec" + std::to_string(size);
+		return 6;
+	}
+	if (type == DOUBLE)
+	{
+		type_name =  "dvec" + std::to_string(size);
+		return 7;
+	}
+	if (type == INT8)
+	{
+		type_name =  "ivec" + std::to_string(size);
+		return 1;
+	}
+	if (type == HINT)
+	{
+		type_name =  "ivec" + std::to_string(size);
+		return 2;
+	}
+	if (type == INT)
+	{
+		type_name = "ivec" + std::to_string(size);
+		return 3;
+	}
+	if (type == LINT)
+	{
+		type_name = "ivec" + std::to_string(size);
+		return 4;
+	}
+	if (type == UINT8)
+	{
+		type_name = "uvec" + std::to_string(size);
+		return 1;
+	}
+	if (type == HUINT)
+	{
+		type_name = "uvec" + std::to_string(size);
+		return 2;
+	}
+	if (type == UINT)
+	{
+		type_name = "uvec" + std::to_string(size);
+		return 3;
+	}
+	if (type == LUINT)
+	{
+		type_name = "uvec" + std::to_string(size);
+		return 4;
+	}
+	if (type == NONE)
+	{
+		type_name = "";
+		return -1;
+	}
+	return -1;
+}
+
 
 int tensor_injection(std::string& body, std::string& var_name, const int i, const tensor& t1)
 {

@@ -1,131 +1,156 @@
+
 #version 460
 #extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable 
-#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable 
-#define THREAD_COUNT 128
+#define NUM_THREADS 128
+#define WARPSIZE 32
+#define BN NUM_THREADS
+#define BM 64
+#define BK 16
+#define WN 64
+#define WM 32
+#define TN 4
+#define TM 4
+#define WNINTER 1
+#define WMINTER 4
+#define WSUBN 64
+#define WSUBM 0
+#define NUM_WARPS 4
 
-
+layout(local_size_x = NUM_THREADS) in;
 layout(push_constant) uniform pushBlock {
-    uint batch_size;
-    uint in_channel;        
-    uint input_size;
-    float momentum;
-    float epsilon;
+    uint m;
+    uint k;
+    uint n;
+    float alpha;
+    float beta;
 };
 
-layout(local_size_x = THREAD_COUNT) in; 
-
 layout(binding=0) buffer buf_0 { float tensor_0[]; };
-layout(binding=5) buffer buf_5 { float tensor_5[]; };
-layout(binding=2) buffer buf_2 { float tensor_2[]; };
-layout(binding=3) buffer buf_3 { float tensor_3[]; };
-layout(binding=4) buffer buf_4 { float tensor_4[]; };
 layout(binding=1) buffer buf_1 { float tensor_1[]; };
+layout(binding=2) buffer buf_2 { float tensor_2[]; };
 
 
-shared float thread_mean[THREAD_COUNT];
-shared float thread_m2[THREAD_COUNT];
-shared uint thread_count[THREAD_COUNT];
+float regM[WMINTER * TM];
+float regN[WNINTER * TN];
+float threadResults[WMINTER * TM * WNINTER * TN];
+
+shared float As[BM * BK];
+shared float Bs[BK * BN];
 
 
-void welford_combine(float val, inout uint count, inout float mean, inout float m2)
-{
-    count += 1;
-    float delta1 = val - mean;
-    mean = delta1 / count;
-    float delta2 = val - mean;
-    m2 += delta1 * delta2;
-}
 
-void welford_combine_2(uint count_b, float mean_b, float m2_b, inout uint count_a, inout float mean_a, inout float m2_a)
-{
-    uint count = count_b + count_a;
-    float nb = count_b / count;
-    float delta = mean_b - mean_a;
-    mean_a += delta * nb;
-    m2_a += m2_b + delta * count_a * nb;
-    count_a = count;
-} 
+    
+void loadRegs(uint rowStrideA, uint rowStrideB, uint a, uint b, uint as, uint bs, uint innerRowA, uint innerColA, uint innerRowB, uint innerColB){
+    //loads stuff
+    for(uint offset = 0; offset+rowStrideA <= BM; offset += rowStrideA) {
+        uint xIdx = a + (innerRowA + offset) * k + innerColA * 4;
+        vec4 tmp = vec4(tensor_0[xIdx + 0], tensor_0[xIdx + 1], tensor_0[xIdx + 2], tensor_0[xIdx + 3]);
+        As[as + ((innerColA * 4) + 0) * BM + innerRowA + offset] = tmp.x;
+        As[as + ((innerColA * 4) + 1) * BM + innerRowA + offset] = tmp.y;
+        As[as + ((innerColA * 4) + 2) * BM + innerRowA + offset] = tmp.z;
+        As[as + ((innerColA * 4) + 3) * BM + innerRowA + offset] = tmp.w;
+    }
 
-void welford_reduce(uint tidx){
-    if(THREAD_COUNT >= 128){
-        welford_combine_2(thread_count[tidx + 64], thread_mean[tidx + 64], thread_m2[tidx + 64],
-            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
-        );
-        memoryBarrierShared();
-    }
-    if(THREAD_COUNT >= 64){
-        welford_combine_2(thread_count[tidx + 32], thread_mean[tidx + 32], thread_m2[tidx + 32],
-            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
-        );
-        memoryBarrierShared();
-    }
-    if(THREAD_COUNT >= 32){
-        welford_combine_2(thread_count[tidx + 16], thread_mean[tidx + 16], thread_m2[tidx + 16],
-            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
-        );
-        memoryBarrierShared();
-    }
-    if(THREAD_COUNT >= 16){
-        welford_combine_2(thread_count[tidx + 8], thread_mean[tidx + 8], thread_m2[tidx + 8],
-            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
-        );
-        memoryBarrierShared();
-    }
-    if(THREAD_COUNT >= 8){
-        welford_combine_2(thread_count[tidx + 4], thread_mean[tidx + 4], thread_m2[tidx + 4],
-            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
-        );
-        memoryBarrierShared();
-    }
-    if(THREAD_COUNT >= 4){
-        welford_combine_2(thread_count[tidx + 2], thread_mean[tidx + 2], thread_m2[tidx + 2],
-            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
-        );
-        memoryBarrierShared();
-    }
-    if(THREAD_COUNT >= 2){
-        welford_combine_2(thread_count[tidx + 1], thread_mean[tidx + 1], thread_m2[tidx + 1],
-            thread_count[tidx], thread_mean[tidx], thread_m2[tidx]
-        );
-        memoryBarrierShared();
+    for(uint offset = 0; offset+rowStrideB <= BK; offset += rowStrideB) {
+        uint mIdx = b + (innerRowB + offset) * n + innerColB * 4;
+        vec4 tmp = vec4(tensor_1[mIdx + 0], tensor_1[mIdx + 1], tensor_1[mIdx + 2], tensor_1[mIdx + 3]);
+        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 0] = tmp.x;
+        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 1] = tmp.y;
+        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 2] = tmp.z;
+        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 3] = tmp.w;
     }
 }
 
-void main(){
-    
-    uint rows = batch_size;
-    uint cols = input_size * in_channel;
-    
-    uint tid = gl_LocalInvocationID.x;
-    uint nwg = gl_NumWorkGroups.x;
-    uint wgid = gl_WorkGroupID.x;
-    uint blkS = gl_WorkGroupSize.x;
-
-
-    for(uint row = wgid; row < rows; row += nwg) {  
-
-        thread_count[tid] = 0;
-        thread_mean[tid] = 0.0f;
-        thread_m2[tid] = 0.0f;
-
-        for(uint col = tid; col < cols; col += blkS)
-            welford_combine(tensor_0[row * cols + col], thread_count[tid], thread_mean[tid], thread_m2[tid]);
-
-        welford_reduce(tid);
-
-        float row_variance = max(thread_m2[0] / thread_count[0], 0);
-        float row_inv_var = inversesqrt(row_variance + epsilon);
-        float row_mean = thread_mean[0];
-
-        if(tid == 0){
-            tensor_1[row] = momentum * row_mean + (1 - momentum) * tensor_1[row];
-            tensor_2[row] = momentum * row_variance + (1 - momentum) * tensor_2[row];
+void processFromSmem(uint as, uint bs uint warpRow, uint warpCol, uint threadRowWarp, uint threadColWarp){
+    for(uint dotIdx = 0; dotIdx < BK; ++dotIdx){
+        for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx){
+            for(uint i = 0; i < TM; ++i)
+                regM[wSubRowIdx * TM + i] = As[as + (dotIdx * BM) + (warpRow * WM) + (wSubRowIdx * WSUBM) + (threadRowWarp * TM) + i];
         }
 
+        for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx){
+            for(uint i = 0; i < TN; ++i)
+                regN[wSubColIdx * TN + i] = Bs[bs + (dotIdx * BN) + (warpCol * WN) + (wSubColIdx * WSUBN) + (threadColWarp * TN) + i];
+        }
 
-        for(uint col = tid; col < cols; col += blkS)
-            tensor_5[row * cols + col] = (tensor_0[row * cols + col] - row_mean) * row_inv_var * tensor_3[col] + tensor_4[col];              
-      
+        for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx){
+            for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx){
+
+                for (uint resIdxM = 0; resIdxM < TM; ++resIdxM) {
+                    for (uint resIdxN = 0; resIdxN < TN; ++resIdxN) {
+
+                        uint reg_idx = (wSubRowIdx * TM + resIdxM) * (WNINTER * TN) + (wSubColIdx * TN) + resIdxN;
+                        threadResults[reg_idx] = fma(regM[wSubRowIdx * TM + resIdxM], regN[wSubColIdx * TN + resIdxN], threadResults[reg_idx]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void main() {
+    uint cRow = gl_WorkGroupID.y;
+    uint cCol = gl_WorkGroupID.x;
+
+    uint tid = gl_LocalInvocationID.x;
+
+    uint warpIdx = tid / WARPSIZE;
+    uint warpCol = warpIdx % (BN / WN);
+    uint warpRow = warpIdx / (BN / WN);
+
+    uint threadIdxWarp = tid % WARPSIZE;
+    uint threadColWarp = threadIdxWarp % (WSUBN / TN);
+    uint threadRowWarp = threadIdxWarp / (WSUBN / TN);
+
+    uint a = cRow * BM * k;
+    uint b = cCol * BN;
+    uint c = ((cRow * BM) + (warpRow * WM)) * n + (cCol * BN) + (warpCol * WN);
+    
+
+    uint innerRowA = tid / (BK / 4);
+    uint innerColA = tid % (BK / 4);
+    uint rowStrideA = (NUM_THREADS * 4) / BK;
+    
+    uint innerRowB = tid / (BN / 4);
+    uint innerColB = tid % (BN / 4);
+    uint rowStrideB = NUM_THREADS / (BN / 4);
+
+
+    for(uint blkIdx = 0; blkIdx < k; blkIdx += BK) {
+        loadRegs(rowStrideA, rowStrideB, a, b, 0, 0, innerRowA, innerColA, innerRowB, innerColB);
+        //memoryBarrierShared();
+        barrier();
+        processFromSmem(0, 0, warpRow, warpCol, threadRowWarp, threadColWarp);
+
+        a += BK;
+        b += BK * n;
+       
+        barrier();
+    }
+
+    for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx) {
+        for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx) {
+            uint c_interm = c + (wSubRowIdx * WSUBM) * n + wSubColIdx * WSUBN;
+
+            for(uint resIdxM = 0; resIdxM < TM; ++resIdxM) {
+                for(uint resIdxN = 0; resIdxN < TN; resIdxN += 4) {
+
+                    uint c_idx = c_interm + (threadRowWarp * TM + resIdxM) * n + threadColWarp * TN + resIdxN;
+                    vec4 tmp = vec4(tensor_2[c_idx + 0], tensor_2[c_idx + 1], tensor_2[c_idx + 2], tensor_2[c_idx + 3]);
+                    uint i = (wSubRowIdx * TM + resIdxM) * (WNINTER * TN) + wSubColIdx * TN + resIdxN;
+                    
+                    tmp.x = fma(alpha, threadResults[i + 0], beta * tmp.x);
+                    tmp.y = fma(alpha, threadResults[i + 1], beta * tmp.y);
+                    tmp.z = fma(alpha, threadResults[i + 2], beta * tmp.z);
+                    tmp.w = fma(alpha, threadResults[i + 3], beta * tmp.w);
+                    
+                    tensor_2[c_idx + 0] = tmp.x;
+                    tensor_2[c_idx + 1] = tmp.y;
+                    tensor_2[c_idx + 2] = tmp.z;
+                    tensor_2[c_idx + 3] = tmp.w;                    
+                }
+            }
+        }
     }
    
 }

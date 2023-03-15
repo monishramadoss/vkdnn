@@ -44,6 +44,7 @@ class tensor final
 	tensor* parent_ = nullptr;
 	DTYPE d_type_;
 	std::string name_;
+
 public:
     explicit tensor(std::vector<uint32_t>& shape, DTYPE type = FLOAT);
 	explicit tensor(const std::vector<uint32_t>& shape={}, DTYPE type = FLOAT);
@@ -93,8 +94,9 @@ inline const char* shader_extensions[]{
 };
 
 
-int gen_type(DTYPE type, std::string& type_name);
+int gen_type(const DTYPE type, std::string& type_name);
 
+int gen_pack(const DTYPE type, std::string& type_name, char size);
 
 int tensor_injection(std::string& body, std::string& var_name, int i, const tensor& t1);
 

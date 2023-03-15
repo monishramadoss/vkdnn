@@ -23,7 +23,7 @@ int main()
     m = 128;
 	n = 128;
 	k = 128;
-    
+    float K = k;
 	tensor t4 = tensor::ones<float>({ m, k });
 	tensor t5 = tensor::ones<float>({ k, n });
 	tensor t6 = tensor::zeros<float>({ m, n });
@@ -33,19 +33,28 @@ int main()
     t4.sync(false);
     t5.sync(false);
 	t6.sync(false);
-
+    // TODO needs to update sync model because it is not working....
+    sleep(1);
 	const float* f1 = (float*)t4.get_host_data()->ptr;
 	const float* f2 = (float*)t5.get_host_data()->ptr;
 	const float* f3 = (float*)t6.get_host_data()->ptr;
+    std::vector<uint32_t> idxs;
+    std::vector<float> vals;
     size_t i;
 	for(i = 0; i < t6.get_size(); ++i)
 	{
-		if(f3[i] != k)
-			break;
+		if(f3[i] != k){
+
+            idxs.push_back(i);
+            vals.push_back(f3[i]);
+        }
 	}
 
-    std::cout << f3[0] << " " << f3[1] << std::endl;
-	bool val = i  == t6.get_size();
+    std::cout << f3[0] << " " << f3[t6.get_size() - 1] << std::endl;
+    std::cout << idxs.size() << std::endl;
+    size_t tmp = t6.get_size();
+	bool val = idxs.size()  == 0;
+
 
     std::cout << val << std::endl;
 	/*float acc = 0;
@@ -84,7 +93,7 @@ int main()
 	// param_tensor.sync();
 
 	// conv2d(param_tensor, inpt, wght, oupt);
-	// oupt.sync(false);
+	// oupt.sync(false);1
 	// inpt.sync(false);
 
 	// const auto* col = static_cast<float*>(oupt.get_host_data()->ptr);

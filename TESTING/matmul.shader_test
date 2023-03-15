@@ -14,7 +14,13 @@
 #define TM 4
 
 #define WNINTER 1
-#define WMINTER (WM * WN) / (WARPSIZE * TM * TN * WNINTER)
+#define WMINTER 4 
+// (WM * WN) / (WARPSIZE * TM * TN * WNINTER)
+
+#define WSUBM  8 
+// WM / WMINTER
+#define WSUBN  64
+// WN / WNINTER
 
 #define NUM_WARPS NUM_THREADS / WARPSIZE
 
@@ -61,16 +67,16 @@ void loadRegs(uint rowStrideA, uint rowStrideB, uint a, uint b, uint as, uint bs
     }
 }
 
-void processFromSmem(uint as, uint bs, uint wsubn, uint wsubm, uint warpRow, uint warpCol, uint threadRowWarp, uint threadColWarp){
+void processFromSmem(uint as, uint bs, uint warpRow, uint warpCol, uint threadRowWarp, uint threadColWarp){
     for(uint dotIdx = 0; dotIdx < BK; ++dotIdx){
         for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx){
             for(uint i = 0; i < TM; ++i)
-                regM[wSubRowIdx * TM + i] = As[as + (dotIdx * BM) + (warpRow * WM) + (wSubRowIdx * wsubm) + (threadRowWarp * TM) + i];
+                regM[wSubRowIdx * TM + i] = As[as + (dotIdx * BM) + (warpRow * WM) + (wSubRowIdx * WSUBM) + (threadRowWarp * TM) + i];
         }
 
         for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx){
             for(uint i = 0; i < TN; ++i)
-                regN[wSubColIdx * TN + i] = Bs[bs + (dotIdx * BN) + (warpCol * WN) + (wSubColIdx * wsubn) + (threadColWarp * TN) + i];
+                regN[wSubColIdx * TN + i] = Bs[bs + (dotIdx * BN) + (warpCol * WN) + (wSubColIdx * WSUBN) + (threadColWarp * TN) + i];
         }
 
         for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx){
@@ -112,12 +118,9 @@ void main(){
     uint warpCol = warpIdx % (BN / WN);
     uint warpRow = warpIdx / (BN / WN);
 
-    uint wsubm = WM / WMINTER;
-    uint wsubn = WN / WNINTER;
-
     uint threadIdxWarp = tid % WARPSIZE;
-    uint threadColWarp = threadIdxWarp % (wsubn / TN);
-    uint threadRowWarp = threadIdxWarp / (wsubn / TN);
+    uint threadColWarp = threadIdxWarp % (WSUBN / TN);
+    uint threadRowWarp = threadIdxWarp / (WSUBN / TN);
 
     uint a = cRow * BM * k;
     uint b = cCol * BN;
@@ -135,9 +138,9 @@ void main(){
 
     for(uint blkIdx = 0; blkIdx < k; blkIdx += BK) {
         loadRegs(rowStrideA, rowStrideB, a, b, 0, 0, innerRowA, innerColA, innerRowB, innerColB);
-        barrier();
+        memoryBarrierShared();
         
-        processFromSmem(0, 0, wsubm, wsubn, warpRow, warpCol, threadRowWarp, threadColWarp);
+        processFromSmem(0, 0, warpRow, warpCol, threadRowWarp, threadColWarp);
         a += BK;
         b += BK * n;
        
@@ -146,7 +149,7 @@ void main(){
 
     for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx) {
         for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx) {
-            uint c_interm = c + (wSubRowIdx * wsubm) * n + wSubColIdx * wsubn;
+            uint c_interm = c + (wSubRowIdx * WSUBM) * n + wSubColIdx * WSUBN;
 
             for(uint resIdxM = 0; resIdxM < TM; resIdxM += 1) {
                 for(uint resIdxN = 0; resIdxN < TN; resIdxN += 4) {
@@ -174,17 +177,17 @@ void main(){
 
 [test]
 
-push uint 0 1000
-push uint 4 2048
-push uint 8 1024
+push uint 0 128
+push uint 4 128
+push uint 8 256
 push float 12 1.0
 push float 16 0.000
 
-ssbo 0 67108864
-ssbo 1 67108864
-ssbo 2 67108864
+ssbo 0 65536
+ssbo 1 131072
+ssbo 2 131072
 
-compute 8 2 1
+compute 8 8 1
 
 
 probe ssbo float 0 0 == 1
@@ -199,4 +202,12 @@ probe ssbo float 1 512 == 1
 probe ssbo float 0 1020 == 1
 probe ssbo float 1 1020 == 1
 
-probe ssbo float 2 0 == 16
+
+
+probe ssbo float 2 0 == 128
+probe ssbo float 2 8 == 128
+
+probe ssbo float 2 508 == 128
+probe ssbo float 2 512 == 128
+
+probe ssbo float 2 131068 == 128

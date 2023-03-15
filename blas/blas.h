@@ -124,8 +124,9 @@ inline void matmul(const tensor& t1, const tensor& t2, const tensor& t3)
 
 #define NUM_THREADS 128
 #define WARPSIZE 32
+#define CEIL_DIV(M, N) (((M) + (N)-1) / (N))
 
-
+//#define BIGGPU
 #ifndef BIGGPU
 #define BN NUM_THREADS
 #define BM 64
@@ -139,7 +140,7 @@ inline void matmul(const tensor& t1, const tensor& t2, const tensor& t3)
 #define WNINTER 1
 #else 
 #define BN NUM_THREADS
-#define BM 128
+#define BM NUM_THREADS
 #define BK 16
 
 #define WN 64
@@ -150,9 +151,13 @@ inline void matmul(const tensor& t1, const tensor& t2, const tensor& t3)
 #define WNINTER 4
 #endif
 
-#define WMINTER (WM * WN) / (WARPSIZE * TM * TN * WNINTER)
-#define NUM_WARPS NUM_THREADS / WARPSIZE
 
+#define WMINTER (WM * WN) / (WARPSIZE * TM * TN * WNINTER)
+
+#define WSUBN WN / WNINTER
+#define WSUBM WM / WMINTER
+
+#define NUM_WARPS NUM_THREADS / WARPSIZE
 
 struct gemm_parameter {
     uint32_t m;
@@ -164,12 +169,12 @@ struct gemm_parameter {
 
 inline uint32_t set_group_size_x(const gemm_parameter& p)
 {
-    return align_size(p.n, BN) / BN;
+    return CEIL_DIV(p.n, BN);
 }
 
 inline uint32_t set_group_size_y(const gemm_parameter& p)
 {
-    return align_size(p.m, BM) / BM;
+    return CEIL_DIV(p.m, BM);
 }
 
 std::string gemm_kernel_code = R"(
@@ -181,13 +186,6 @@ layout(push_constant) uniform pushBlock {
     float alpha;
     float beta;
 };
-
-float regM[WMINTER * TM];
-float regN[WNINTER * TN];
-float threadResults[WMINTER * TM * WNINTER * TN];
-
-shared float As[BM * BK];
-shared float Bs[BK * BN];
 
 )";
 
@@ -221,12 +219,31 @@ inline std::string gemm_shader(const std::string& kernel_shader_code, const tens
         local_shader = shader_extensions[ext_int_1] + local_shader;
         local_shader = shader_extensions[ext_int_2] + local_shader;
     }
+    
+    std::string out_string;
+    gen_type(t3.get_type(), out_string);
+
+    std::string out_pack_string;
+    gen_pack(t3.get_type(), out_pack_string, 4);
+
+
     local_shader = "#version 460\n" + local_shader + R"(
+
+)" + out_string + R"( regM[WMINTER * TM];
+)" + out_string + R"( regN[WNINTER * TN];
+)" + out_string + R"( threadResults[WMINTER * TM * WNINTER * TN];
+
+shared )" + out_string + R"( As[BM * BK];
+shared )" + out_string + R"( Bs[BK * BN];
+
+
+
+    )" + R"(
 void loadRegs(uint rowStrideA, uint rowStrideB, uint a, uint b, uint as, uint bs, uint innerRowA, uint innerColA, uint innerRowB, uint innerColB){
     //loads stuff
     for(uint offset = 0; offset+rowStrideA <= BM; offset += rowStrideA) {
         uint xIdx = a + (innerRowA + offset) * k + innerColA * 4;
-        vec4 tmp = vec4()" + shader_tensor[0] + R"([xIdx + 0], )" + shader_tensor[0] + R"([xIdx + 1], )" + shader_tensor[0] + R"([xIdx + 2], )" + shader_tensor[0] + R"([xIdx + 3]);
+        )" + out_pack_string + " tmp = " + out_pack_string + "(" + shader_tensor[0] + "[xIdx + 0], " + shader_tensor[0] + "[xIdx + 1], " + shader_tensor[0] + "[xIdx + 2], " + shader_tensor[0] + R"([xIdx + 3]);
         As[as + ((innerColA * 4) + 0) * BM + innerRowA + offset] = tmp.x;
         As[as + ((innerColA * 4) + 1) * BM + innerRowA + offset] = tmp.y;
         As[as + ((innerColA * 4) + 2) * BM + innerRowA + offset] = tmp.z;
@@ -235,7 +252,7 @@ void loadRegs(uint rowStrideA, uint rowStrideB, uint a, uint b, uint as, uint bs
 
     for(uint offset = 0; offset+rowStrideB <= BK; offset += rowStrideB) {
         uint mIdx = b + (innerRowB + offset) * n + innerColB * 4;
-        vec4 tmp = vec4()" + shader_tensor[1] + R"([mIdx + 0], )" + shader_tensor[1] + R"([mIdx + 1], )" + shader_tensor[1] + R"([mIdx + 2], )" + shader_tensor[1] + R"([mIdx + 3]);
+        )" + out_pack_string + " tmp = " + out_pack_string + "(" + shader_tensor[1] + "[mIdx + 0], " + shader_tensor[1] + "[mIdx + 1], " + shader_tensor[1] + "[mIdx + 2], " + shader_tensor[1] + R"([mIdx + 3]);
         Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 0] = tmp.x;
         Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 1] = tmp.y;
         Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 2] = tmp.z;
@@ -243,16 +260,16 @@ void loadRegs(uint rowStrideA, uint rowStrideB, uint a, uint b, uint as, uint bs
     }
 }
 
-void processFromSmem(uint as, uint bs, uint wsubn, uint wsubm, uint warpRow, uint warpCol, uint threadRowWarp, uint threadColWarp){
+void processFromSmem(uint as, uint bs, uint warpRow, uint warpCol, uint threadRowWarp, uint threadColWarp){
     for(uint dotIdx = 0; dotIdx < BK; ++dotIdx){
         for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx){
             for(uint i = 0; i < TM; ++i)
-                regM[wSubRowIdx * TM + i] = As[as + (dotIdx * BM) + (warpRow * WM) + (wSubRowIdx * wsubm) + (threadRowWarp * TM) + i];
+                regM[wSubRowIdx * TM + i] = As[as + (dotIdx * BM) + (warpRow * WM) + (wSubRowIdx * WSUBM) + (threadRowWarp * TM) + i];
         }
 
         for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx){
             for(uint i = 0; i < TN; ++i)
-                regN[wSubColIdx * TN + i] = Bs[bs + (dotIdx * BN) + (warpCol * WN) + (wSubColIdx * wsubn) + (threadColWarp * TN) + i];
+                regN[wSubColIdx * TN + i] = Bs[bs + (dotIdx * BN) + (warpCol * WN) + (wSubColIdx * WSUBN) + (threadColWarp * TN) + i];
         }
 
         for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx){
@@ -280,12 +297,9 @@ void main() {
     uint warpCol = warpIdx % (BN / WN);
     uint warpRow = warpIdx / (BN / WN);
 
-    uint wsubm = WM / WMINTER;
-    uint wsubn = WN / WNINTER;
-
     uint threadIdxWarp = tid % WARPSIZE;
-    uint threadColWarp = threadIdxWarp % (wsubn / TN);
-    uint threadRowWarp = threadIdxWarp / (wsubn / TN);
+    uint threadColWarp = threadIdxWarp % (WSUBN / TN);
+    uint threadRowWarp = threadIdxWarp / (WSUBN / TN);
 
     uint a = cRow * BM * k;
     uint b = cCol * BN;
@@ -303,9 +317,10 @@ void main() {
 
     for(uint blkIdx = 0; blkIdx < k; blkIdx += BK) {
         loadRegs(rowStrideA, rowStrideB, a, b, 0, 0, innerRowA, innerColA, innerRowB, innerColB);
+        //memoryBarrierShared();
         barrier();
-        
-        processFromSmem(0, 0, wsubm, wsubn, warpRow, warpCol, threadRowWarp, threadColWarp);
+        processFromSmem(0, 0, warpRow, warpCol, threadRowWarp, threadColWarp);
+
         a += BK;
         b += BK * n;
        
@@ -314,13 +329,13 @@ void main() {
 
     for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx) {
         for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx) {
-            uint c_interm = c + (wSubRowIdx * wsubm) * n + wSubColIdx * wsubn;
+            uint c_interm = c + (wSubRowIdx * WSUBM) * n + wSubColIdx * WSUBN;
 
-            for(uint resIdxM = 0; resIdxM < TM; resIdxM += 1) {
+            for(uint resIdxM = 0; resIdxM < TM; ++resIdxM) {
                 for(uint resIdxN = 0; resIdxN < TN; resIdxN += 4) {
 
                     uint c_idx = c_interm + (threadRowWarp * TM + resIdxM) * n + threadColWarp * TN + resIdxN;
-                    vec4 tmp = vec4()" + shader_tensor[2] + R"([c_idx + 0], )" + shader_tensor[2] + R"([c_idx + 1], )" + shader_tensor[2] + R"([c_idx + 2], )" + shader_tensor[2] + R"([c_idx + 3]);
+                    )" + out_pack_string + " tmp = " + out_pack_string + "(" + shader_tensor[2] + "[c_idx + 0], " + shader_tensor[2] + "[c_idx + 1], " + shader_tensor[2] + "[c_idx + 2], " + shader_tensor[2] + R"([c_idx + 3]);
                     uint i = (wSubRowIdx * TM + resIdxM) * (WNINTER * TN) + wSubColIdx * TN + resIdxN;
                     
                     tmp.x = fma(alpha, threadResults[i + 0], beta * tmp.x);
@@ -336,6 +351,7 @@ void main() {
             }
         }
     }
+   
 })";
 
     return local_shader;
@@ -356,6 +372,8 @@ inline void gemm(const tensor& t1, const tensor& t2, const tensor& t3, const flo
                     "#define TM " + std::to_string(TM) + "\n" +
                     "#define WNINTER " + std::to_string(WNINTER) + "\n" + 
                     "#define WMINTER " + std::to_string(WMINTER) + "\n" + 
+                    "#define WSUBN " + std::to_string(WSUBN) + "\n" + 
+                    "#define WSUBM " + std::to_string(WSUBM) + "\n" +                     
                     "#define NUM_WARPS " + std::to_string(NUM_WARPS) + "\n" +
                     kernel_code;
 
