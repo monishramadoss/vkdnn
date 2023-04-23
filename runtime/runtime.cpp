@@ -32,18 +32,18 @@ runtime* init()
 #endif
 
 device::device(device&& d) noexcept : device_id_(d.device_id_), logical_device_(d.logical_device_),
-                                      physical_device_(d.physical_device_), device_properties_(d.device_properties_),
-                                      device_features_(d.device_features_)
-                                      , memory_properties_(d.memory_properties_),
-                                      subgroup_properites_(d.subgroup_properites_),
-                                      cmd_queue_(d.cmd_queue_),
-                                      max_device_memory_size_(d.max_device_memory_size_),
-                                      max_host_device_memory_size_(d.max_host_device_memory_size_),
-                                      max_subgroup_size_(d.max_subgroup_size_)
-                                      , host_coherent_allocator_(std::move(d.host_coherent_allocator_)),
-                                      device_allocator_(std::move(d.device_allocator_)),
-                                      local_thread_(d.local_thread_),
-                                      queue_priority_(d.queue_priority_), device_name(d.device_name)
+									  physical_device_(d.physical_device_), device_properties_(d.device_properties_),
+									  device_features_(d.device_features_)
+									  , memory_properties_(d.memory_properties_),
+									  subgroup_properites_(d.subgroup_properites_),
+									  cmd_queue_(d.cmd_queue_),
+									  max_device_memory_size_(d.max_device_memory_size_),
+									  max_host_device_memory_size_(d.max_host_device_memory_size_),
+									  max_subgroup_size_(d.max_subgroup_size_)
+									  , host_coherent_allocator_(std::move(d.host_coherent_allocator_)),
+									  device_allocator_(std::move(d.device_allocator_)),
+									  local_thread_(d.local_thread_),
+									  queue_priority_(d.queue_priority_), device_name(d.device_name)
 {
 	d.wait();
 	MEMCPY(max_work_group_size_, d.max_work_group_size_, sizeof(uint32_t) * 3);
@@ -106,8 +106,8 @@ inline size_t next_power_of_two(const size_t size)
 }
 
 inline int find_memory_type_index(const uint32_t memory_type_bits,
-                               const VkPhysicalDeviceMemoryProperties& properties,
-                               const bool should_be_device_local)
+							   const VkPhysicalDeviceMemoryProperties& properties,
+							   const bool should_be_device_local)
 {
 	auto lambda_get_memory_type = [&](const VkMemoryPropertyFlags property_flags) -> int
 	{
@@ -279,14 +279,14 @@ void vk_chunk::set_host_visible()
 vk_chunk::~vk_chunk() = default;
 
 vk_allocator::vk_allocator() : device_id_(0), chunk_size_(0), alignment_(0), used_mem_(0), max_mem_(0),
-                               device_(nullptr), device_local_(false), properties_()
+							   device_(nullptr), device_local_(false), properties_()
 
 {
 }
 
 vk_allocator::vk_allocator(const uint32_t device_id, const VkDevice& dev,
-                           const VkPhysicalDeviceMemoryProperties& properties,
-                           const size_t chunk_size, const size_t max_device_cap, const bool make_device_local) :
+						   const VkPhysicalDeviceMemoryProperties& properties,
+						   const size_t chunk_size, const size_t max_device_cap, const bool make_device_local) :
 	device_id_(device_id),
 	chunk_size_(chunk_size),
 	max_mem_(max_device_cap),
@@ -299,9 +299,9 @@ vk_allocator::vk_allocator(const uint32_t device_id, const VkDevice& dev,
 }
 
 vk_allocator::vk_allocator(vk_allocator&& vka) noexcept: device_id_(vka.device_id_), chunk_size_(vka.chunk_size_),
-                                                         used_mem_(vka.used_mem_), max_mem_(vka.max_mem_),
-                                                         device_(vka.device_), device_local_(vka.device_local_),
-                                                         properties_(vka.properties_), chunks_(std::move(vka.chunks_))
+														 used_mem_(vka.used_mem_), max_mem_(vka.max_mem_),
+														 device_(vka.device_), device_local_(vka.device_local_),
+														 properties_(vka.properties_), chunks_(std::move(vka.chunks_))
 {
 }
 
@@ -342,7 +342,7 @@ vk_block* vk_allocator::allocate_buffer(const size_t size, const VkBufferUsageFl
 	vkGetBufferMemoryRequirements(device_, buffer, &buffer_memory_requirements);
 	const size_t alignment = buffer_memory_requirements.alignment;
 	uint32_t memory_type_index = find_memory_type_index(buffer_memory_requirements.memoryTypeBits, properties_,
-	                                                 device_local_);
+													 device_local_);
 
 	vk_block* blk = nullptr;
 	for (const auto& chunk : chunks_)
@@ -391,7 +391,7 @@ vk_block* vk_allocator::allocate_image()
 	vkGetImageMemoryRequirements(device_, image, &image_memory_requirements);
 	const size_t alignment = image_memory_requirements.alignment;
 	uint32_t memory_type_index = find_memory_type_index(image_memory_requirements.memoryTypeBits, properties_,
-	                                                 device_local_);
+													 device_local_);
 
 	vk_block* blk = nullptr;
 	for (const auto& chunk : chunks_)

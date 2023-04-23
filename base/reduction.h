@@ -1,66 +1,81 @@
 // reduction.h : Header file for your target.
 
 #pragma once
+#include "../runtime/runtime.h"
 #include "../tensor/tensor.h"
 
-inline std::string reduction_shader = R"(
-layout(push_constant) uniform pushBlock {
-	uint total;
-};
+#define THREAD_COUNT 128
 
-layout(local_size_x_id = 1) in;
-)";
-
-
-inline std::string temp_reduce_sum = R"(
-#version 460
-#extension GL_KHR_shader_subgroup_arithmetic : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable
-
-layout(push_constant) uniform pushBlock {
-        uint total;
-};
-
-layout(local_size_x = 32) in;
-
-layout(binding=0) buffer buf_0 { float tensor_0[]; };
-layout(binding=1) buffer buf_1 { float tensor_1[]; };
-shared float data[64];
-
-
-void main()
+inline std::string reduction_shader_code(const std::string& kernel_shader_code, const std::string fn_pass, const tensor& t1, const tensor& t2)
 {
-    float acc = 0;
-    if(gl_GlobalInvocationID.x < total){
-        acc = tensor_0[gl_GlobalInvocationID.x];
-    }
-    acc = %s;
+    std::string local_shader = "#define THREAD_COUNT " + std::to_string(THREAD_COUNT) + kernel_shader_code;
+    std::string shader_tensor[2];
+    const int ext_int_0 = tensor_injection(local_shader, shader_tensor[0], 0, t1);
+    const int ext_int_1 = tensor_injection(local_shader, shader_tensor[1], 1, t2);
+    local_shader = SHADER_VERSION + local_shader;
+    std::string tmp_type;
+    gen_type(t2.get_type(), tmp_type);
+    std::string fmt_str = Format(fn_pass, "val", "val_op");
 
-    if(gl_SubgroupInvocationID == 0)
-    {
-        data[gl_SubgroupID] = acc;
-    }
-
-    memoryBarrierShared();
-    barrier();
-
-    if(gl_SubgroupID==0)
-    {
-        acc = gl_SubgroupInvocationID < gl_NumSubgroups ? data[gl_SubgroupInvocationID] : 0;
-        acc = %s;
-    }
-
-    if(gl_LocalInvocationID.x == 0)
-    {
-        tensor_1[gl_WorkGroupID.x] = acc;
-    }
-
+    local_shader += R"(
+shared )" + tmp_type + R"( thread_values[THREAD_COUNT];
+void reduce_op()" + tmp_type + R"( val, inout )" + tmp_type + R"( val_op) {
+    {0}
 }
+
+void reduce(uint tid){
+    reduce_op(thread_values[tid + 64], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 32], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 16], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 8], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 4], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 2], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 1], thread_values[tid]);
+    memoryBarrierShared();
+}
+
+void main() {        
+    uint tid = gl_LocalInvocationID.x;
+    uint nwg = gl_NumWorkGroups.x;
+    uint wgid = gl_WorkGroupID.x;
+    uint blkS = gl_WorkGroupSize.x;
+    
+    for(uint row = wgid; row < rows; row += nwg){
+        thread_values[tid] =  )" + tmp_type + R"((0);
+        
+        for(uint col = tid; col < cols; col += blkS)
+            reduce_op()" + shader_tensor[0] + R"([col * rows + row], thread_values[tid]);
+        reduce(tid);
+        if(tid == 0)
+            )" + shader_tensor[1] + R"([row] = thread_values[0];
+    }
+})";
+
+    local_shader = Format(local_shader, fmt_str);
+    return local_shader;
+}
+
+inline std::string reduction_kernel_code = R"(
+layout(push_constant) uniform pushBlock {
+    uint rows;
+    uint cols;
+    uint total;
+};
+
+layout(local_size_x = THREAD_COUNT) in; 
 
 )";
 
 struct reduction_param
 {
+    uint32_t rows;
+    uint32_t cols;
     uint32_t total;
 };
 
@@ -69,102 +84,103 @@ inline uint32_t set_group_size(reduction_param p)
     return align_size(p.total, 32) / 32;
 }
 
-void reduce_sum(const tensor& t1, const tensor& t2)
+void reduce_sum(const int axis, const tensor& t1, const tensor& t2)
 {
-    const reduction_param p { static_cast<uint32_t>(t1.get_size()) };
-    const std::string kernel_code = reduction_shader_code_math(reduction_shader, "subgroupAdd(acc)", t1, t2);   
-    k_runtime->make_job<reduction_param>("reduce_add", temp_reduce_sum, { t1.get_data(), t2.get_data()},
-        p, set_group_size(p));
+    const reduction_param p{ t1.get_size(axis), t1.get_size(0, axis), t1.get_size() };
+    std::string kernel_code = reduction_shader_code(reduction_kernel_code, "{1} += {0};", t1, t2);
+    k_runtime->make_job<reduction_param>("reduce_sum", kernel_code, { t1.get_data(), t2.get_data()
+        }, p, set_group_size(p));
 }
 
 
-void reduce_mul(const tensor& t1, const tensor& t2)
+void reduce_mul(const int axis, const tensor& t1, const tensor& t2)
 {
-    const reduction_param p { static_cast<uint32_t>(t1.get_size()) };
-    const std::string kernel_code = reduction_shader_code_math(reduction_shader, "subgroupMul(acc)", t1, t2);
-    k_runtime->make_job<reduction_param>("reduce_mul", kernel_code, { t1.get_data(), t2.get_data() },
-        p, set_group_size(p));
-
+    const reduction_param p{ t1.get_size(axis), t1.get_size(0, axis), t1.get_size() };
+    std::string kernel_code = reduction_shader_code(reduction_kernel_code, "{1} *= {0};", t1, t2);
+    k_runtime->make_job<reduction_param>("reduce_mul", kernel_code, { t1.get_data(), t2.get_data()
+        }, p, set_group_size(p));
 }
 
-void redcue_min(const tensor& t1, const tensor& t2)
+void redcue_min(const int axis, const tensor& t1, const tensor& t2)
 {
-    const reduction_param p { static_cast<uint32_t>(t1.get_size()) };
-    const std::string kernel_code = reduction_shader_code_math(reduction_shader, "subgroupMin(acc)", t1, t2);
-    k_runtime->make_job<reduction_param>("reduce_min", kernel_code, { t1.get_data(), t2.get_data() },
-        p, set_group_size(p));
-
+    const reduction_param p{ t1.get_size(axis), t1.get_size(0, axis), t1.get_size() };
+    std::string kernel_code = reduction_shader_code(reduction_kernel_code, "{1} = min({0}, {1});", t1, t2);
+    k_runtime->make_job<reduction_param>("reduce_min", kernel_code, { t1.get_data(), t2.get_data()
+        }, p, set_group_size(p));
 }
 
-void reduce_max(const tensor& t1, const tensor& t2)
+void reduce_max(const int axis, const tensor& t1, const tensor& t2)
 {
-    const reduction_param p { static_cast<uint32_t>(t1.get_size()) };
-    const std::string kernel_code = reduction_shader_code_math(reduction_shader, "subgroupMax(acc)", t1, t2);
-    k_runtime->make_job<reduction_param>("reduce_max", kernel_code, { t1.get_data(), t2.get_data() },
-        p, set_group_size(p));
-
+    const reduction_param p{ t1.get_size(axis), t1.get_size(0, axis), t1.get_size() };
+    std::string kernel_code = reduction_shader_code(reduction_kernel_code, "{1} = max({0}, {1});", t1, t2);
+    k_runtime->make_job<reduction_param>("reduce_max", kernel_code, { t1.get_data(), t2.get_data()
+        }, p, set_group_size(p));
 }
 
-void reduce_mean(const tensor& t1, const tensor& t2)
+
+
+
+inline std::string reduce_mean_shader_code(const std::string& kernel_shader_code, const tensor& t1, const tensor& t2)
 {
-    
+    std::string local_shader = "#define THREAD_COUNT " + std::to_string(THREAD_COUNT) + kernel_shader_code;
+    std::string shader_tensor[2];
+    const int ext_int_0 = tensor_injection(local_shader, shader_tensor[0], 0, t1);
+    const int ext_int_1 = tensor_injection(local_shader, shader_tensor[1], 1, t2);
+    local_shader = SHADER_VERSION + local_shader;
+    std::string tmp_type;
+    gen_type(t2.get_type(), tmp_type);
+
+    local_shader += R"(
+shared )" + tmp_type + R"( thread_values[THREAD_COUNT];
+void reduce_op()" + tmp_type + R"( val, inout )" + tmp_type + R"( val_op) {
+    val_op += val;
 }
 
-/*
- *
- *
-#version 450
-#extension GL_KHR_shader_subgroup_arithmetic : enable
-
-layout(std430, binding = 0) buffer Input
-{
-   float inputs[];
-};
-
-layout(std430, binding = 1) buffer Output
-{
-   float outputs[];
-};
-
-layout (local_size_x_id = 1) in;
-layout (constant_id = 2) const int sumSubGroupSize = 64;
-
-layout(push_constant) uniform PushConsts
-{
-  int n;
-} consts;
-
-shared float sdata[sumSubGroupSize];
-
-void main()
-{
-    float sum = 0.0;
-    if (gl_GlobalInvocationID.x < consts.n)
-    {
-        sum = inputs[gl_GlobalInvocationID.x];
-    }
-
-    sum = subgroupAdd(sum);
-
-    if (gl_SubgroupInvocationID == 0)
-    {
-        sdata[gl_SubgroupID] = sum;
-    }
-
+void reduce(uint tid){
+    reduce_op(thread_values[tid + 64], thread_values[tid]);
     memoryBarrierShared();
-    barrier();
-
-    if (gl_SubgroupID == 0)
-    {
-        sum = gl_SubgroupInvocationID < gl_NumSubgroups ? sdata[gl_SubgroupInvocationID] : 0;
-        sum = subgroupAdd(sum);
-    }
-
-    if (gl_LocalInvocationID.x == 0)
-    {
-        outputs[gl_WorkGroupID.x] = sum;
-    }
+    reduce_op(thread_values[tid + 32], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 16], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 8], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 4], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 2], thread_values[tid]);
+    memoryBarrierShared();
+    reduce_op(thread_values[tid + 1], thread_values[tid]);
+    memoryBarrierShared();
 }
- *
- *
- */
+
+void main() {        
+    uint tid = gl_LocalInvocationID.x;
+    uint nwg = gl_NumWorkGroups.x;
+    uint wgid = gl_WorkGroupID.x;
+    uint blkS = gl_WorkGroupSize.x;
+    
+    for(uint row = wgid; row < rows; row += nwg){
+        thread_values[tid] = )" + tmp_type + R"((0);
+        
+        for(uint col = tid; col < cols; col += blkS)
+            reduce_op()" + shader_tensor[0] + R"([col * rows + row], thread_values[tid]);
+        reduce(tid);
+        if(tid == 0)
+            )" + shader_tensor[1] + R"([row] = thread_values[0] / cols;
+    }
+})";
+
+    return local_shader;
+}
+
+
+void reduce_mean(const int axis, const tensor& t1, const tensor& t2)
+{
+    const reduction_param p{ t1.get_size(0, axis), t1.get_size(axis), t1.get_size() };
+    std::string kernel_code = reduce_mean_shader_code(reduction_kernel_code, t1, t2);
+    std::cout << kernel_code << std::endl;
+    k_runtime->make_job<reduction_param>("reduce_max", kernel_code, { t1.get_data(), t2.get_data()
+        }, p, set_group_size(p));
+}
+
+

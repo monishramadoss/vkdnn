@@ -1,5 +1,5 @@
 ﻿find_package(Vulkan REQUIRED)
-add_library(runtime STATIC "runtime.cpp" "runtime.h" "threads.h" "device.h" "allocator.h" "job.h")
+add_library(runtime STATIC "runtime.cpp" "runtime.h" "threads.h" "device.h" "allocator.h" "job.h" "comms.h")
 target_compile_features(runtime PRIVATE cxx_std_20)
 target_include_directories(runtime PUBLIC $<BUILD_INTERFACE:${Vulkan_INCLUDE_DIR}>)
 target_link_libraries(runtime ${Vulkan_LIBRARY})

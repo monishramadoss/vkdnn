@@ -4,8 +4,9 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
-#include <cublas_v2.h>
-#include <cuda_runtime.h>
+
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
 
 #define CEIL_DIV(M, N) (((M) + (N)-1) / (N))
 const int WARPSIZE = 32; // warpSize is not constexpr
@@ -176,7 +177,7 @@ __global__ void __launch_bounds__(NUM_THREADS)
             for (uint resIdxM = 0; resIdxM < TM; resIdxM += 1)
             {
                 for (uint resIdxN = 0; resIdxN < TN; resIdxN += 4)
-                {
+                {   
                     // load C vector into registers
                     float4 tmp = reinterpret_cast<float4 *>(
                         &C_interim[(threadRowInWarp * TM + resIdxM) * N +
@@ -263,7 +264,8 @@ void copy_matrix(const float *src, float *dest, int N)
 
 void main()
 {
-
+    cudaError_t cudaStatus;
+    cudaStatus = cudaSetDevice(0)
     // cuBLAS FLOPs ceiling is reached at 8192
     std::vector<int> SIZE = {128, 256, 512, 1024, 2048, 4096};
 
@@ -289,6 +291,18 @@ void main()
     zero_init_matrix(C, max_size * max_size);
     zero_init_matrix(C_ref, max_size * max_size);
 
+    cudaMemcpy(dA, a, max_size * max_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(dB, a,  max_size * max_size * sizeof(float), cudaMemcpyHostToDevice);
+
+    runSgemmWarptiling(m, n, k, alpha, dA, dB, beta, dC);
+    cudaStatus = cudaDeviceSynchronize();
+    cudaMemcpy(dC, a,  max_size * max_size * sizeof(float), cudaMemcpyDeviceToHost);
+    
+
+
+    cudaFree(dA);
+    cudaFree(dB);
+    cudaFree(dC);
     
 
 }

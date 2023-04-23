@@ -7,9 +7,9 @@
 
 struct matmul_parameter
 {
-	uint32_t m;
-	uint32_t n;
-	uint32_t k;
+    uint32_t m;
+    uint32_t n;
+    uint32_t k;
 };
 
 inline uint32_t set_group_size_x(const matmul_parameter& p)
@@ -25,9 +25,9 @@ inline uint32_t set_group_size_y(const matmul_parameter& p)
 std::string matmul_kernel_code = R"(
 #define TILE_DIM 32
 layout(push_constant) uniform pushBlock {
-	uint m;
-	uint n;
-	uint k;
+    uint m;
+    uint n;
+    uint k;
 };
 
 shared float ATile[TILE_DIM][TILE_DIM];
@@ -128,7 +128,7 @@ inline void matmul(const tensor& t1, const tensor& t2, const tensor& t3)
 
 //#define BIGGPU
 #ifndef BIGGPU
-#define BN NUM_THREADS
+#define BN 128
 #define BM 64
 #define BK 16
 
@@ -139,8 +139,8 @@ inline void matmul(const tensor& t1, const tensor& t2, const tensor& t3)
 
 #define WNINTER 1
 #else 
-#define BN NUM_THREADS
-#define BM NUM_THREADS
+#define BN 128
+#define BM 128
 #define BK 16
 
 #define WN 64
@@ -154,8 +154,8 @@ inline void matmul(const tensor& t1, const tensor& t2, const tensor& t3)
 
 #define WMINTER (WM * WN) / (WARPSIZE * TM * TN * WNINTER)
 
-#define WSUBN WN / WNINTER
-#define WSUBM WM / WMINTER
+#define WSUBN WN / (WNINTER)
+#define WSUBM WM / (WMINTER)
 
 #define NUM_WARPS NUM_THREADS / WARPSIZE
 
@@ -227,7 +227,8 @@ inline std::string gemm_shader(const std::string& kernel_shader_code, const tens
     gen_pack(t3.get_type(), out_pack_string, 4);
 
 
-    local_shader = "#version 460\n" + local_shader + R"(
+    local_shader = "#version 450\n" + local_shader + R"(
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 
 )" + out_string + R"( regM[WMINTER * TM];
 )" + out_string + R"( regN[WNINTER * TN];
@@ -236,27 +237,25 @@ inline std::string gemm_shader(const std::string& kernel_shader_code, const tens
 shared )" + out_string + R"( As[BM * BK];
 shared )" + out_string + R"( Bs[BK * BN];
 
-
-
     )" + R"(
-void loadRegs(uint rowStrideA, uint rowStrideB, uint a, uint b, uint as, uint bs, uint innerRowA, uint innerColA, uint innerRowB, uint innerColB){
-    //loads stuff
+void loadSmem(uint rowStrideA, uint rowStrideB, uint a, uint b, uint as, uint bs, uint innerRowA, uint innerColA, uint innerRowB, uint innerColB){
+
     for(uint offset = 0; offset+rowStrideA <= BM; offset += rowStrideA) {
         uint xIdx = a + (innerRowA + offset) * k + innerColA * 4;
         )" + out_pack_string + " tmp = " + out_pack_string + "(" + shader_tensor[0] + "[xIdx + 0], " + shader_tensor[0] + "[xIdx + 1], " + shader_tensor[0] + "[xIdx + 2], " + shader_tensor[0] + R"([xIdx + 3]);
-        As[as + ((innerColA * 4) + 0) * BM + innerRowA + offset] = tmp.x;
-        As[as + ((innerColA * 4) + 1) * BM + innerRowA + offset] = tmp.y;
-        As[as + ((innerColA * 4) + 2) * BM + innerRowA + offset] = tmp.z;
-        As[as + ((innerColA * 4) + 3) * BM + innerRowA + offset] = tmp.w;
+        As[((innerColA * 4) + 0) * BM + innerRowA + offset] = tmp.x;
+        As[((innerColA * 4) + 1) * BM + innerRowA + offset] = tmp.y;
+        As[((innerColA * 4) + 2) * BM + innerRowA + offset] = tmp.z;
+        As[((innerColA * 4) + 3) * BM + innerRowA + offset] = tmp.w;
     }
 
     for(uint offset = 0; offset+rowStrideB <= BK; offset += rowStrideB) {
         uint mIdx = b + (innerRowB + offset) * n + innerColB * 4;
         )" + out_pack_string + " tmp = " + out_pack_string + "(" + shader_tensor[1] + "[mIdx + 0], " + shader_tensor[1] + "[mIdx + 1], " + shader_tensor[1] + "[mIdx + 2], " + shader_tensor[1] + R"([mIdx + 3]);
-        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 0] = tmp.x;
-        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 1] = tmp.y;
-        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 2] = tmp.z;
-        Bs[bs + (innerRowB + offset) * BN + innerColB * 4 + 3] = tmp.w;
+        Bs[(innerRowB + offset) * BN + innerColB * 4 + 0] = tmp.x;
+        Bs[(innerRowB + offset) * BN + innerColB * 4 + 1] = tmp.y;
+        Bs[(innerRowB + offset) * BN + innerColB * 4 + 2] = tmp.z;
+        Bs[(innerRowB + offset) * BN + innerColB * 4 + 3] = tmp.w;
     }
 }
 
@@ -279,7 +278,7 @@ void processFromSmem(uint as, uint bs, uint warpRow, uint warpCol, uint threadRo
                     for (uint resIdxN = 0; resIdxN < TN; ++resIdxN) {
 
                         uint reg_idx = (wSubRowIdx * TM + resIdxM) * (WNINTER * TN) + (wSubColIdx * TN) + resIdxN;
-                        threadResults[reg_idx] = fma(regM[wSubRowIdx * TM + resIdxM], regN[wSubColIdx * TN + resIdxN], threadResults[reg_idx]);
+                        threadResults[reg_idx] += regM[wSubRowIdx * TM + resIdxM] * regN[wSubColIdx * TN + resIdxN];
                     }
                 }
             }
@@ -303,7 +302,7 @@ void main() {
 
     uint a = cRow * BM * k;
     uint b = cCol * BN;
-    uint c = ((cRow * BM) + (warpRow * WM)) * n + (cCol * BN) + (warpCol * WN);
+    uint c = (cRow * BM + warpRow * WM) * n + cCol * BN + warpCol * WN;
     
 
     uint innerRowA = tid / (BK / 4);
@@ -316,9 +315,9 @@ void main() {
 
 
     for(uint blkIdx = 0; blkIdx < k; blkIdx += BK) {
-        loadRegs(rowStrideA, rowStrideB, a, b, 0, 0, innerRowA, innerColA, innerRowB, innerColB);
-        //memoryBarrierShared();
-        barrier();
+        loadSmem(rowStrideA, rowStrideB, a, b, 0, 0, innerRowA, innerColA, innerRowB, innerColB);
+        memoryBarrierShared();
+
         processFromSmem(0, 0, warpRow, warpCol, threadRowWarp, threadColWarp);
 
         a += BK;
@@ -327,21 +326,23 @@ void main() {
         barrier();
     }
 
+    barrier();
+
     for(uint wSubRowIdx = 0; wSubRowIdx < WMINTER; ++wSubRowIdx) {
         for(uint wSubColIdx = 0; wSubColIdx < WNINTER; ++wSubColIdx) {
             uint c_interm = c + (wSubRowIdx * WSUBM) * n + wSubColIdx * WSUBN;
 
-            for(uint resIdxM = 0; resIdxM < TM; ++resIdxM) {
+            for(uint resIdxM = 0; resIdxM < TM; resIdxM += 1) {
                 for(uint resIdxN = 0; resIdxN < TN; resIdxN += 4) {
 
                     uint c_idx = c_interm + (threadRowWarp * TM + resIdxM) * n + threadColWarp * TN + resIdxN;
                     )" + out_pack_string + " tmp = " + out_pack_string + "(" + shader_tensor[2] + "[c_idx + 0], " + shader_tensor[2] + "[c_idx + 1], " + shader_tensor[2] + "[c_idx + 2], " + shader_tensor[2] + R"([c_idx + 3]);
                     uint i = (wSubRowIdx * TM + resIdxM) * (WNINTER * TN) + wSubColIdx * TN + resIdxN;
                     
-                    tmp.x = fma(alpha, threadResults[i + 0], beta * tmp.x);
-                    tmp.y = fma(alpha, threadResults[i + 1], beta * tmp.y);
-                    tmp.z = fma(alpha, threadResults[i + 2], beta * tmp.z);
-                    tmp.w = fma(alpha, threadResults[i + 3], beta * tmp.w);
+                    tmp.x = alpha * threadResults[i + 0] + beta * tmp.x;
+                    tmp.y = alpha * threadResults[i + 1] + beta * tmp.y;
+                    tmp.z = alpha * threadResults[i + 2] + beta * tmp.z;
+                    tmp.w = alpha * threadResults[i + 3] + beta * tmp.w;
                     
                     )" + shader_tensor[2] + R"([c_idx + 0] = tmp.x;
                     )" + shader_tensor[2] + R"([c_idx + 1] = tmp.y;
@@ -378,6 +379,6 @@ inline void gemm(const tensor& t1, const tensor& t2, const tensor& t3, const flo
                     kernel_code;
 
     kernel_code = gemm_shader(kernel_code, t1, t2, t3);    
-    //std::cout << kernel_code << std::endl;
+   // std::cout << kernel_code << std::endl;
     k_runtime->make_job<gemm_parameter>("gemm", kernel_code, { t1.get_data(), t2.get_data() , t3.get_data()}, p, set_group_size_x(p), set_group_size_y(p));
 }

@@ -6,22 +6,64 @@
 #include <vector>
 #include <string>
 
+struct vec2 {
+	float x;
+	float y;
+};
+
+struct dvec2 {
+	double x;
+	double y;
+};
+
+struct ivec2 {
+	int x;
+	int y;
+};
+
 enum DTYPE
 {
 	NONE = 0,
+
 	HFLOAT = 1,
 	FLOAT = 2,
 	DOUBLE = 3,
+
 	HINT = 4,
 	INT = 5,
 	LINT = 6,
+
 	HUINT = 7,
 	UINT = 8,
 	LUINT = 9,
+
 	INT8 = 10,
 	UINT8 = 11,
+
 	BOOL = 12,
+	COMPLEX_FLOAT = 13,
+	COMPLEX_DOUBLE = 14,
+	COMPLEX_INT = 15
 };
+
+
+
+
+inline const char* shader_extensions[]{
+	"", // 0
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable \n", // 1
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable \n", // 2 
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int32: enable \n", // 3
+	"#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable \n", // 4
+	"#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable \n", // 5
+	"#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable \n", // 6
+	"#extension GL_EXT_shader_explicit_arithmetic_types_float64 : enable \n" // 7
+};
+
+
+int gen_type(const DTYPE type, std::string& type_name);
+
+int gen_pack(const DTYPE type, std::string& type_name, char size);
 
 enum  CHUNK_PROTOCOL
 {
@@ -33,7 +75,7 @@ enum  CHUNK_PROTOCOL
 struct chunk_spec
 {
 	CHUNK_PROTOCOL spec;
-	uint32_t dim;
+	int dim;
 };
 
 class tensor final
@@ -55,7 +97,6 @@ public:
 	tensor& reshape(const std::vector<uint32_t>& shape);
 	tensor& reshape(std::vector<uint32_t>& shape);
 
-
 	tensor(tensor&& t) noexcept;
 	tensor& operator=(tensor&& t) noexcept;
 
@@ -66,6 +107,7 @@ public:
 
 	void set_data(vk_block*);
 	[[nodiscard]] size_t get_size(const uint32_t i = 0) const { return view_.size(i); }
+	[[nodiscard]] size_t get_size(const uint32_t i, const uint32_t j) const { return view_.size(i) / view_.size(j); }
 	[[nodiscard]] uint32_t get_dims() const { return view_.ndims(); }
 	[[nodiscard]] uint32_t get_shape(const uint32_t i = 0) const { return view_.shape(i); }
 	[[nodiscard]] size_t get_bytes_size() const { return view_.bytes_length(); }
@@ -81,25 +123,7 @@ public:
 	static tensor ones(const std::vector<uint32_t>& shape);
 };
 
-
-inline const char* shader_extensions[]{
-	"", // 0
-	"#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable \n", // 1
-	"#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable \n", // 2 
-	"#extension GL_EXT_shader_explicit_arithmetic_types_int32: enable \n", // 3
-	"#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable \n", // 4
-	"#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable \n", // 5
-	"#extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable \n", // 6
-	"#extension GL_EXT_shader_explicit_arithmetic_types_float64 : enable \n" // 7
-};
-
-
-int gen_type(const DTYPE type, std::string& type_name);
-
-int gen_pack(const DTYPE type, std::string& type_name, char size);
-
 int tensor_injection(std::string& body, std::string& var_name, int i, const tensor& t1);
-
 
 #include "init.h"
 
