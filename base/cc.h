@@ -4,8 +4,8 @@
 */
 
 #pragma once
-#include "utils.h"
-#include "tensor.h"
+#include "../runtime/runtime.h"
+#include "../tensor/tensor.h"
 
 void all_reduce(){ // each rank receives the reduction of input values across ranks.
 	//out[i] = sum(inX[i])

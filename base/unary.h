@@ -384,3 +384,28 @@ inline void identity(const tensor& t1, const tensor& t2) {
         set_group_size(p));
 }
 
+inline void isinf(const tensor& t1, const tensor& t2) {
+    const unary_parameter p{ static_cast<uint32_t>(t1.get_size()) };
+    const std::string kernel_code = unary_shader_code(unary_shader, "{1}[i] = isinf({0}[i]);", t1, t2);
+    k_runtime->make_job<unary_parameter>("isinf", kernel_code, { t1.get_data(), t2.get_data() }, p,
+        set_group_size(p));
+}
+
+inline void isnan(const tensor& t1, const tensor& t2) {
+    const unary_parameter p{ static_cast<uint32_t>(t1.get_size()) };
+    const std::string kernel_code = unary_shader_code(unary_shader, "{1}[i] = isnan({0}[i]);", t1, t2);
+    k_runtime->make_job<unary_parameter>("isnan", kernel_code, { t1.get_data(), t2.get_data() }, p,
+        set_group_size(p));
+}
+
+
+inline void logical_not(const tensor& t1, const tensor& t2)
+{
+    const logic_parameter p{ static_cast<uint32_t>(t1.get_size()) };
+    if (t1.get_type() != BOOL || t2.get_type() != BOOL)
+        throw std::runtime_error("Incorrect return type");
+
+    const std::string kernel_code = unary_shader_code(unary_shader, "{1}[i] = !{0}[i]", t1, t2);
+    k_runtime->make_job<logic_parameter>("or", kernel_code, { t1.get_data(), t2.get_data() },
+        p, set_group_size(p));
+}

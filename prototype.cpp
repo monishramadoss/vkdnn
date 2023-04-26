@@ -117,38 +117,45 @@ int main()
     // }
 
 
+    tensor mval = arange_t<float>(0, 1024, 1);
+    mval.reshape({ 4, 4, 64 });
+    tensor rval = tensor::zeros<float>({ 64 });
+    reduce_mean(2, mval, rval);
 
+    rval.sync(false);
+    float* frval = (float*)rval.get_host_data()->ptr;
+    std::cout << std::endl;
+    for (uint32_t i = 0; i < rval.get_size(); ++i)
+        std::cout << frval[i] << " ";
 
     
 
+    tensor x = tensor::ones<float>({2, 4, 3, 3});
+    tensor y = tensor::zeros<float>({2, 4, 3, 3});
+    add(x, x, x);
 
-
-     tensor x = tensor::ones<float>({2, 4, 3, 3});
-     tensor y = tensor::zeros<float>({2, 4, 3, 3});
-     add(x, x, x);
-
-     uint32_t rows = x.get_shape(0);
-     uint32_t cols = x.get_size(2) * x.get_shape(1);
+    uint32_t rows = x.get_shape(0);
+    uint32_t cols = x.get_size(2) * x.get_shape(1);
     
-     tensor M = tensor::zeros<float>({rows});
-     tensor v = tensor::zeros<float>({rows});
+    tensor M = tensor::zeros<float>({rows});
+    tensor v = tensor::zeros<float>({rows});
 
-     tensor w = tensor::zeros<float>({cols});
-     tensor b = tensor::zeros<float>({cols});
+    tensor w = tensor::zeros<float>({cols});
+    tensor b = tensor::zeros<float>({cols});
 
 
-     instancenorm(x, M, v, w, b, y);
+    instancenorm(x, M, v, w, b, y);
     
-     y.sync(false);
-     x.sync(false);
+    y.sync(false);
+    x.sync(false);
  
-     const auto* row = static_cast<float*>(x.get_host_data()->ptr);
-     const auto* col = static_cast<float*>(y.get_host_data()->ptr);
-     for (size_t i = 0; i < x.get_size(); ++i)
-         std::cout << row[i] << " ";
-     std::cout << std::endl << std::endl;
-     for (size_t i = 0; i < y.get_size(); ++i)
-     	std::cout << col[i] << " ";
+    const auto* row = static_cast<float*>(x.get_host_data()->ptr);
+    const auto* col = static_cast<float*>(y.get_host_data()->ptr);
+    for (size_t i = 0; i < x.get_size(); ++i)
+        std::cout << row[i] << " ";
+    std::cout << std::endl << std::endl;
+    for (size_t i = 0; i < y.get_size(); ++i)
+    std::cout << col[i] << " ";
 
 
     return 0;

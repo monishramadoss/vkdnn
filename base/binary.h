@@ -125,7 +125,7 @@ inline void max(const tensor& t1, const tensor& t2, const tensor& t3)
 template <>
 inline void min(const tensor& t1, const tensor& t2, const tensor& t3)
 {
-    const binary_parameter p{static_cast<uint32_t>(t1.get_size())};
+    const binary_parameter p{ static_cast<uint32_t>(t1.get_size()) };
     const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = min({0}[i], {1}[i]);", t1, t2, t3);
     k_runtime->make_job<binary_parameter>("min", kernel_code, {t1.get_data(), t2.get_data(), t3.get_data()},
                                                       p, set_group_size(p));
@@ -154,5 +154,44 @@ if({0}[i] == 0 && {1}[i] == 0)
 
     const std::string kernel_code = binary_shader_code(binary_shader, shader_code, t1, t2, t3);
     k_runtime->make_job<binary_parameter>("atan2", kernel_code, { t1.get_data(), t2.get_data(), t3.get_data() },
+        p, set_group_size(p));
+}
+
+
+inline void gcd(const tensor& t1, const tensor& t2, const tensor& t3) {
+    const binary_parameter p{ static_cast<uint32_t>(t1.get_size()) };
+    std::string type_str;
+    gen_type(t3.get_type(), type_str);
+    std::string local_shader_code = binary_shader + R"(
+float gcd(float a, float b){
+    a = abs(a); b = abs(b);
+    for(uint i = 0; i < 1000000; ++i){
+        if(a == )" + type_str + R"(0)) break;
+        a = mod(a, b);
+        if(b == )" + type_str + R"(0)) break;           
+        b = mod(b, a);
+    }
+    return a + b;
+}
+    )";
+
+
+    const std::string kernel_code = binary_shader_code(local_shader_code, "{2}[i] = gcd({0}[i], {1}[i]);", t1, t2, t3);
+    k_runtime->make_job<binary_parameter>("gcd", kernel_code, { t1.get_data(), t2.get_data(), t3.get_data() }, p, set_group_size(p));
+}
+
+inline void shift_left(const tensor& t1, const tensor& t2, const tensor& t3)
+{
+    const binary_parameter p{ static_cast<uint32_t>(t1.get_size()) };
+    const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] << {1}[i];", t1, t2, t3);
+    k_runtime->make_job<binary_parameter>("shift_left", kernel_code, { t1.get_data(), t2.get_data(), t3.get_data() },
+        p, set_group_size(p));
+}
+
+inline void shift_right(const tensor& t1, const tensor& t2, const tensor& t3)
+{
+    const binary_parameter p{ static_cast<uint32_t>(t1.get_size()) };
+    const std::string kernel_code = binary_shader_code(binary_shader, "{2}[i] = {0}[i] >> {1}[i];", t1, t2, t3);
+    k_runtime->make_job<binary_parameter>("shift_right", kernel_code, { t1.get_data(), t2.get_data(), t3.get_data() },
         p, set_group_size(p));
 }

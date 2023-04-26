@@ -5,15 +5,15 @@
 - [ ] log_softmax
 - [ ] batch_norm_legit.no_stats
 - [ ] softmax
-- [ ] to_copy
+- [x] to_copy
 - [x] abs
 - [x] acos
 - [x] add_scalar
 - [x] add_tensor
 - [ ] addmm
 - [x] alias
-- [ ] amax
-- [ ] amin
+- [x] amax
+- [x] amin
 - [x] argmax
 - [x] argmin
 - [ ] as_strided
@@ -59,8 +59,8 @@
 - [x] gt_tensor
 - [x] hardtanh
 - [ ] index_select
-- [ ] isinf
-- [ ] isnan
+- [x] isinf
+- [x] isnan
 - [x] le_scalar
 - [x] le_tensor
 - [x] leaky_relu
@@ -90,7 +90,7 @@
 - [x] ne_scalar
 - [x] ne_tensor
 - [x] neg
-- [ ] permute
+- [x] permute
 - [x] pow_scalar
 - [x] pow_tensor 
 - [x] reciprocal
@@ -122,7 +122,7 @@
 - [ ] upsample_bilinear2d
 - [ ] upsample_nearest2d
 - [ ] var
-- [ ] view
+- [x] view
 - [ ] where
 
 
@@ -161,7 +161,7 @@
 - [x] fill
 - [x] floor
 - [ ] imag
-- [ ] isfinite
+- [x] isfinite
 - [ ] lgamma
 - [x] log
 - [x] log1p
@@ -191,7 +191,7 @@
 - [x] fmax
 - [x] fmin
 - [x] fmod
-- [ ] gcd
+- [x] gcd
 - [x] ge
 - [x] gt
 - [ ] hypot
@@ -206,8 +206,8 @@
 - [ ] nextafter
 - [x] pow
 - [x] rsqrt
-- [ ] shift_left
-- [ ] shift_right_arith
+- [x] shift_left
+- [x] shift_right_arith
 - [x] sub
 - [ ] zeta
 - [ ] as_strided
@@ -234,10 +234,10 @@
 - [ ] copy_strided
 - [x] copy_to
 - [x] resize
-- [ ] amax
-- [ ] amin
-- [ ] prod
-- [ ] sum
+- [x] amax
+- [x] amin
+- [x] prod
+- [x] sum
 - [ ] var
 - [ ] empty_strided
 - [x] scalar_tensor

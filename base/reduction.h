@@ -92,7 +92,6 @@ void reduce_sum(const int axis, const tensor& t1, const tensor& t2)
         }, p, set_group_size(p));
 }
 
-
 void reduce_mul(const int axis, const tensor& t1, const tensor& t2)
 {
     const reduction_param p{ t1.get_size(axis), t1.get_size(0, axis), t1.get_size() };
@@ -116,8 +115,6 @@ void reduce_max(const int axis, const tensor& t1, const tensor& t2)
     k_runtime->make_job<reduction_param>("reduce_max", kernel_code, { t1.get_data(), t2.get_data()
         }, p, set_group_size(p));
 }
-
-
 
 
 inline std::string reduce_mean_shader_code(const std::string& kernel_shader_code, const tensor& t1, const tensor& t2)
@@ -173,13 +170,11 @@ void main() {
     return local_shader;
 }
 
-
 void reduce_mean(const int axis, const tensor& t1, const tensor& t2)
 {
-    const reduction_param p{ t1.get_size(0, axis), t1.get_size(axis), t1.get_size() };
+    const reduction_param p{t1.get_size(axis), t1.get_size(0, axis), t1.get_size() };
     std::string kernel_code = reduce_mean_shader_code(reduction_kernel_code, t1, t2);
-    std::cout << kernel_code << std::endl;
-    k_runtime->make_job<reduction_param>("reduce_max", kernel_code, { t1.get_data(), t2.get_data()
+    k_runtime->make_job<reduction_param>("reduce_mean", kernel_code, { t1.get_data(), t2.get_data()
         }, p, set_group_size(p));
 }
 

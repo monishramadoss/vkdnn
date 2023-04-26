@@ -164,14 +164,3 @@ inline void logical_or(const tensor& t1, const tensor& t2, const tensor& t3)
                                                      p, set_group_size(p));
 }
 
-
-inline void logical_not(const tensor& t1, const tensor& t2)
-{
-    const logic_parameter p{ static_cast<uint32_t>(t1.get_size()) };
-    if (t1.get_type() != BOOL || t2.get_type() != BOOL)
-        throw std::runtime_error("Incorrect return type");
-
-    const std::string kernel_code = unary_shader_code(unary_shader, "{1}[i] = !{0}[i]", t1, t2);
-    k_runtime->make_job<logic_parameter>("or", kernel_code, { t1.get_data(), t2.get_data()},
-        p, set_group_size(p));
-}
