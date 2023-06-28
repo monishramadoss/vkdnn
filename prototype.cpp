@@ -132,7 +132,7 @@ int main()
 
     tensor x = tensor::ones<float>({2, 4, 3, 3});
     tensor y = tensor::zeros<float>({2, 4, 3, 3});
-    add(x, x, x);
+    //add(x, x, x);
 
     uint32_t rows = x.get_shape(0);
     uint32_t cols = x.get_size(2) * x.get_shape(1);
@@ -155,7 +155,7 @@ int main()
         std::cout << row[i] << " ";
     std::cout << std::endl << std::endl;
     for (size_t i = 0; i < y.get_size(); ++i)
-    std::cout << col[i] << " ";
+        std::cout << col[i] << " ";
 
 
     return 0;

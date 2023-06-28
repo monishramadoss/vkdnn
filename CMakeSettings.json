@@ -41,8 +41,8 @@
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "linux_x64" ],
-      "intelliSenseMode": "windows-msvc-x86",
-      "remoteMachineName": "${defaultRemoteMachineName}",
+      "intelliSenseMode": "linux-gcc-x64",
+      "remoteMachineName": "-1888047740;red (username=moe, port=22, authentication=Password)",
       "remoteCMakeListsRoot": "$HOME/.vs/${projectDirName}/${workspaceHash}/src",
       "remoteBuildRoot": "$HOME/.vs/${projectDirName}/${workspaceHash}/out/build/${name}",
       "remoteInstallRoot": "$HOME/.vs/${projectDirName}/${workspaceHash}/out/install/${name}",
@@ -62,14 +62,15 @@
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "linux_x64" ],
       "intelliSenseMode": "windows-msvc-x64",
-      "remoteMachineName": "${defaultRemoteMachineName}",
+      "remoteMachineName": "-1888047740;red (username=moe, port=22, authentication=Password)",
       "remoteCMakeListsRoot": "$HOME/.vs/${projectDirName}/${workspaceHash}/src",
       "remoteBuildRoot": "$HOME/.vs/${projectDirName}/${workspaceHash}/out/build/${name}",
       "remoteInstallRoot": "$HOME/.vs/${projectDirName}/${workspaceHash}/out/install/${name}",
       "remoteCopySources": true,
       "rsyncCommandArgs": "-t --delete",
       "remoteCopyBuildOutput": false,
-      "remoteCopySourcesMethod": "sftp"
+      "remoteCopySourcesMethod": "sftp",
+      "addressSanitizerEnabled": false
     },
     {
       "name": "WSL-GCC-Debug",
@@ -83,8 +84,7 @@
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "linux_x64" ],
       "intelliSenseMode": "linux-gcc-x86",
-      "wslPath": "${defaultWSLPath}",
-      "variables": []
+      "wslPath": "${defaultWSLPath}"
     },
     {
       "name": "WSL-GCC-Release",
@@ -97,8 +97,7 @@
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "linux_x64" ],
-      "wslPath": "${defaultWSLPath}",
-      "variables": []
+      "wslPath": "${defaultWSLPath}"
     }
   ]
 }
